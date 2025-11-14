@@ -67,6 +67,7 @@
                     <div class="git-tabs-inner">
                         <button class="git-tab-button active" data-git-tab="commit">Commit</button>
                         <button class="git-tab-button" data-git-tab="logs">Logs</button>
+                        <button class="git-tab-button" data-git-tab="stash">Stash</button>
                     </div>
 
                     <!-- Git Commit Tab -->
@@ -116,6 +117,20 @@
                         <h2>Commit History</h2>
                         <div id="git-logs-content" class="git-content">
                             <p class="placeholder">Select a repository to view logs</p>
+                        </div>
+                    </div>
+
+                    <!-- Git Stash Tab -->
+                    <div id="git-stash-tab" class="git-tab-content">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h2 style="margin: 0;">Stashed Changes</h2>
+                            <div style="display: flex; gap: 8px;">
+                                <button id="create-stash-btn" class="btn btn-primary">📦 Create Stash</button>
+                                <button id="refresh-stash-btn" class="btn btn-secondary">🔄 Refresh</button>
+                            </div>
+                        </div>
+                        <div id="stash-list" class="git-content">
+                            <p class="placeholder">Loading stashes...</p>
                         </div>
                     </div>
                 </div>

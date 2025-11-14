@@ -903,6 +903,97 @@ ipcMain.handle('diagram:delete-file', async (event, filePath) => {
   }
 });
 
+// Stash IPC handlers
+ipcMain.handle('git:list-stashes', async () => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const stashList = await git.stashList();
+    // Return only serializable data
+    const stashes = stashList.all.map(stash => ({
+      index: stash.index,
+      hash: stash.hash ? String(stash.hash) : '',
+      date: stash.date ? (stash.date instanceof Date ? stash.date.toISOString() : String(stash.date)) : '',
+      message: stash.message ? String(stash.message) : '',
+      refs: stash.refs ? String(stash.refs) : ''
+    }));
+    return { stashes };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('git:get-stash-diff', async (event, stashIndex) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const diff = await git.raw(['stash', 'show', '-p', `stash@{${stashIndex}}`, '--no-color']);
+    return { diff: diff || '' };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('git:apply-stash', async (event, stashIndex) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const result = await git.raw(['stash', 'apply', `stash@{${stashIndex}}`]);
+    return { success: true, message: result || 'Stash applied successfully' };
+  } catch (error) {
+    return { error: error.message, message: error.message };
+  }
+});
+
+ipcMain.handle('git:pop-stash', async (event, stashIndex) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const result = await git.raw(['stash', 'pop', `stash@{${stashIndex}}`]);
+    return { success: true, message: result || 'Stash popped successfully' };
+  } catch (error) {
+    return { error: error.message, message: error.message };
+  }
+});
+
+ipcMain.handle('git:drop-stash', async (event, stashIndex) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const result = await git.raw(['stash', 'drop', `stash@{${stashIndex}}`]);
+    return { success: true, message: result || 'Stash dropped successfully' };
+  } catch (error) {
+    return { error: error.message, message: error.message };
+  }
+});
+
+ipcMain.handle('git:create-stash', async (event, message) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const args = ['stash', 'push'];
+    if (message) {
+      args.push('-m', message);
+    }
+    const result = await git.raw(args);
+    return { success: true, message: result || 'Stash created successfully' };
+  } catch (error) {
+    return { error: error.message, message: error.message };
+  }
+});
+
 ipcMain.handle('git:rebase-branch', async (event, branchToRebase, ontoBranch) => {
   if (!git) {
     return { error: 'Git repository not initialized' };

@@ -2313,6 +2313,9 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
             loadCommitFiles();
             // Apply commit template if available
             applyCommitTemplate();
+        } else if (tabName === 'stash') {
+            // Load stashes
+            loadStashes();
         }
     });
 });
@@ -2320,6 +2323,21 @@ document.getElementById('commit-btn').addEventListener('click', commitChanges);
 document.getElementById('push-btn').addEventListener('click', pushChanges);
 document.getElementById('pull-btn').addEventListener('click', pullChanges);
 document.getElementById('force-push-btn').addEventListener('click', forcePush);
+
+// Stash buttons
+const createStashBtn = document.getElementById('create-stash-btn');
+if (createStashBtn) {
+    createStashBtn.addEventListener('click', async () => {
+        await createStash();
+    });
+}
+
+const refreshStashBtn = document.getElementById('refresh-stash-btn');
+if (refreshStashBtn) {
+    refreshStashBtn.addEventListener('click', async () => {
+        await loadStashes();
+    });
+}
 
 // Refresh commit files button
 const refreshCommitFilesBtn = document.getElementById('refresh-commit-files');
@@ -2865,6 +2883,204 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Stash functions
+async function loadStashes() {
+    const stashList = document.getElementById('stash-list');
+    if (!stashList) return;
+    
+    try {
+        const result = await ipcRenderer.invoke('git:list-stashes');
+        
+        if (result.error) {
+            if (result.error.includes('not initialized')) {
+                stashList.innerHTML = '<p class="placeholder">No repository configured</p>';
+            } else {
+                stashList.innerHTML = `<p class="error">Error loading stashes: ${result.error}</p>`;
+            }
+            return;
+        }
+        
+        const stashes = result.stashes || [];
+        
+        if (stashes.length === 0) {
+            stashList.innerHTML = '<p class="placeholder">No stashes found</p>';
+            return;
+        }
+        
+        let html = '<div class="stash-list-container">';
+        stashes.forEach((stash, index) => {
+            const stashDate = stash.date ? new Date(stash.date).toLocaleString() : 'Unknown date';
+            const stashMessage = stash.message || 'WIP';
+            const shortHash = stash.hash ? stash.hash.substring(0, 7) : '';
+            
+            html += `
+                <div class="stash-item" data-stash-index="${stash.index}">
+                    <div class="stash-header">
+                        <div class="stash-info">
+                            <div class="stash-message">${escapeHtml(stashMessage)}</div>
+                            <div class="stash-meta">
+                                <span class="stash-hash">${shortHash}</span>
+                                <span class="stash-date">${stashDate}</span>
+                            </div>
+                        </div>
+                        <div class="stash-actions">
+                            <button class="btn btn-small btn-primary view-stash-diff" data-stash-index="${stash.index}">View Diff</button>
+                            <button class="btn btn-small btn-success apply-stash" data-stash-index="${stash.index}">Apply</button>
+                            <button class="btn btn-small btn-success pop-stash" data-stash-index="${stash.index}">Pop</button>
+                            <button class="btn btn-small btn-danger drop-stash" data-stash-index="${stash.index}">Drop</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        
+        stashList.innerHTML = html;
+        
+        // Attach event listeners
+        stashList.querySelectorAll('.view-stash-diff').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const stashIndex = parseInt(e.target.dataset.stashIndex);
+                await showStashDiff(stashIndex);
+            });
+        });
+        
+        stashList.querySelectorAll('.apply-stash').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const stashIndex = parseInt(e.target.dataset.stashIndex);
+                await applyStash(stashIndex);
+            });
+        });
+        
+        stashList.querySelectorAll('.pop-stash').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const stashIndex = parseInt(e.target.dataset.stashIndex);
+                await popStash(stashIndex);
+            });
+        });
+        
+        stashList.querySelectorAll('.drop-stash').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const stashIndex = parseInt(e.target.dataset.stashIndex);
+                await dropStash(stashIndex);
+            });
+        });
+    } catch (error) {
+        stashList.innerHTML = `<p class="error">Error loading stashes: ${error.message}</p>`;
+    }
+}
+
+async function showStashDiff(stashIndex) {
+    try {
+        const result = await ipcRenderer.invoke('git:get-stash-diff', stashIndex);
+        if (result.error) {
+            await showAlert('Error', `Error loading stash diff: ${result.error}`);
+        } else {
+            const diff = result.diff || 'No diff available';
+            const formattedDiff = formatCommitDiff(diff);
+            showDiffModal(`Stash@{${stashIndex}} Diff`, formattedDiff);
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+}
+
+function showDiffModal(title, content) {
+    const modal = document.getElementById('diff-modal');
+    const titleEl = document.getElementById('diff-modal-title');
+    const contentEl = document.getElementById('diff-modal-content');
+    
+    if (modal && titleEl && contentEl) {
+        titleEl.textContent = title;
+        contentEl.innerHTML = content;
+        modal.style.display = 'flex';
+        setupDiffFileCollapse();
+    }
+}
+
+async function applyStash(stashIndex) {
+    const confirmed = await showConfirm('Apply Stash', `Apply stash@{${stashIndex}}? This will apply the changes but keep the stash.`);
+    if (!confirmed) return;
+    
+    try {
+        const result = await ipcRenderer.invoke('git:apply-stash', stashIndex);
+        if (result.error) {
+            await showAlert('Error', `Error applying stash: ${result.error}`);
+            addGitMessage('Stash Apply Error', result.message || result.error, 'error');
+        } else {
+            await showAlert('Success', 'Stash applied successfully!');
+            addGitMessage('Stash Applied', result.message || `Stash@{${stashIndex}} applied`, 'success');
+            await loadStashes();
+            await loadCommitFiles();
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+        addGitMessage('Stash Apply Error', error.message, 'error');
+    }
+}
+
+async function popStash(stashIndex) {
+    const confirmed = await showConfirm('Pop Stash', `Pop stash@{${stashIndex}}? This will apply the changes and remove the stash.`);
+    if (!confirmed) return;
+    
+    try {
+        const result = await ipcRenderer.invoke('git:pop-stash', stashIndex);
+        if (result.error) {
+            await showAlert('Error', `Error popping stash: ${result.error}`);
+            addGitMessage('Stash Pop Error', result.message || result.error, 'error');
+        } else {
+            await showAlert('Success', 'Stash popped successfully!');
+            addGitMessage('Stash Popped', result.message || `Stash@{${stashIndex}} popped`, 'success');
+            await loadStashes();
+            await loadCommitFiles();
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+        addGitMessage('Stash Pop Error', error.message, 'error');
+    }
+}
+
+async function dropStash(stashIndex) {
+    const confirmed = await showConfirm('Drop Stash', `Drop stash@{${stashIndex}}? This will permanently delete the stash.`);
+    if (!confirmed) return;
+    
+    try {
+        const result = await ipcRenderer.invoke('git:drop-stash', stashIndex);
+        if (result.error) {
+            await showAlert('Error', `Error dropping stash: ${result.error}`);
+            addGitMessage('Stash Drop Error', result.message || result.error, 'error');
+        } else {
+            await showAlert('Success', 'Stash dropped successfully!');
+            addGitMessage('Stash Dropped', result.message || `Stash@{${stashIndex}} dropped`, 'success');
+            await loadStashes();
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+        addGitMessage('Stash Drop Error', error.message, 'error');
+    }
+}
+
+async function createStash() {
+    const message = await showPrompt('Create Stash', 'Enter a message for this stash (optional):', '');
+    if (message === null) return; // User cancelled
+    
+    try {
+        const result = await ipcRenderer.invoke('git:create-stash', message || null);
+        if (result.error) {
+            await showAlert('Error', `Error creating stash: ${result.error}`);
+            addGitMessage('Stash Create Error', result.message || result.error, 'error');
+        } else {
+            await showAlert('Success', 'Stash created successfully!');
+            addGitMessage('Stash Created', result.message || 'Stash created', 'success');
+            await loadStashes();
+            await loadCommitFiles();
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+        addGitMessage('Stash Create Error', error.message, 'error');
+    }
 }
 
 function renderDiagram() {

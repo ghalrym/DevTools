@@ -860,6 +860,63 @@ header h1 {
     font-size: 11px;
 }
 
+/* Stash Styles */
+.stash-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.stash-item {
+    background: #252525;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 16px;
+    transition: background-color 0.2s ease;
+}
+
+.stash-item:hover {
+    background: #2a2a2a;
+}
+
+.stash-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.stash-info {
+    flex: 1;
+    min-width: 200px;
+}
+
+.stash-message {
+    font-weight: 600;
+    color: #e0e0e0;
+    margin-bottom: 8px;
+    font-size: 14px;
+    word-break: break-word;
+}
+
+.stash-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: #888;
+}
+
+.stash-hash {
+    font-family: 'Courier New', monospace;
+}
+
+.stash-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .git-message-content {
     color: #ccc;
     white-space: pre-wrap;
