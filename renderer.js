@@ -984,6 +984,29 @@ async function loadBranches() {
                 ${branch.current ? '<span class="branch-indicator">current</span>' : ''}
             `;
             
+            // Make branch clickable to view its logs
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', async (e) => {
+                // Don't trigger if right-clicking
+                if (e.button === 2) return;
+                
+                // Switch to logs tab and load this branch's logs
+                document.querySelectorAll('.git-tab-button').forEach(btn => btn.classList.remove('active'));
+                const logsButton = document.querySelector('[data-git-tab="logs"]');
+                if (logsButton) {
+                    logsButton.classList.add('active');
+                }
+                
+                document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
+                const logsTab = document.getElementById('git-logs-tab');
+                if (logsTab) {
+                    logsTab.classList.add('active');
+                }
+                
+                // Load logs for this branch
+                await loadGitLogs(branch.name);
+            });
+            
             // Add right-click context menu (only for local branches)
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
@@ -1059,6 +1082,30 @@ async function loadBranches() {
                 <span class="branch-name">${escapeHtml(branch.name)}</span>
             `;
             
+            // Make branch clickable to view its logs
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', async (e) => {
+                // Don't trigger if right-clicking
+                if (e.button === 2) return;
+                
+                // Switch to logs tab and load this branch's logs
+                // For remote branches, we need to use the full name (e.g., origin/branch-name)
+                document.querySelectorAll('.git-tab-button').forEach(btn => btn.classList.remove('active'));
+                const logsButton = document.querySelector('[data-git-tab="logs"]');
+                if (logsButton) {
+                    logsButton.classList.add('active');
+                }
+                
+                document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
+                const logsTab = document.getElementById('git-logs-tab');
+                if (logsTab) {
+                    logsTab.classList.add('active');
+                }
+                
+                // Load logs for this remote branch (use full name like origin/branch-name)
+                await loadGitLogs(branch.fullName);
+            });
+            
             // Add right-click context menu for remote branches
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
@@ -1115,6 +1162,8 @@ async function checkoutBranch(branchName) {
     } else {
         await loadBranches();
         await loadCommitFiles();
+        // Refresh logs to show the new branch's commits
+        await loadGitLogs(branchName);
     }
 }
 
@@ -1131,6 +1180,8 @@ async function checkoutRemoteBranch(remoteBranchName, localBranchName) {
     } else {
         await loadBranches();
         await loadCommitFiles();
+        // Refresh logs to show the new branch's commits (use localBranchName as that's what was checked out)
+        await loadGitLogs(localBranchName);
     }
 }
 
@@ -1336,7 +1387,7 @@ function attachFileActionListeners() {
     });
 }
 
-async function loadGitLogs() {
+async function loadGitLogs(branchName = null) {
     const logsContent = document.getElementById('git-logs-content');
     
     if (!logsContent) {
@@ -1346,7 +1397,7 @@ async function loadGitLogs() {
     logsContent.innerHTML = '<p class="loading">Loading commit history...</p>';
     
     try {
-        const result = await ipcRenderer.invoke('git:get-logs', 50);
+        const result = await ipcRenderer.invoke('git:get-logs', 50, branchName);
         
         if (result.error) {
             // If repository not initialized, show helpful message
@@ -1381,7 +1432,26 @@ async function loadGitLogs() {
             return;
         }
         
+        // Show which branch we're viewing
         let html = '';
+        if (result.branch) {
+            html += `<div style="padding: 8px 12px; background: #2a2a2a; border-bottom: 1px solid #3d3d3d; color: #4a9eff; font-size: 12px; font-weight: 600;">
+                branch: ${escapeHtml(result.branch)}
+            </div>`;
+        } else {
+            // Get current branch name
+            try {
+                const statusResult = await ipcRenderer.invoke('git:get-status');
+                if (statusResult.status && statusResult.status.current) {
+                    html += `<div style="padding: 8px 12px; background: #2a2a2a; border-bottom: 1px solid #3d3d3d; color: #4a9eff; font-size: 12px; font-weight: 600;">
+                        branch: ${escapeHtml(statusResult.status.current)}
+                    </div>`;
+                }
+            } catch (e) {
+                // Silently fail if we can't get branch name
+            }
+        }
+        
         result.logs.forEach(commit => {
             const shortHash = commit.hash ? commit.hash.substring(0, 7) : 'N/A';
             html += `
@@ -1908,7 +1978,7 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
         }
         
         if (tabName === 'logs') {
-            // Always try to load logs, let the function handle errors gracefully
+            // Always try to load logs for current branch, let the function handle errors gracefully
             loadGitLogs();
         } else if (tabName === 'commit') {
             // Load staged/unstaged files for commit tab

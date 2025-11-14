@@ -257,23 +257,54 @@ ipcMain.handle('git:get-status', async () => {
   }
 });
 
-ipcMain.handle('git:get-logs', async (event, limit = 50) => {
+ipcMain.handle('git:get-logs', async (event, limit = 50, branch = null) => {
   if (!git) {
     return { error: 'Git repository not initialized' };
   }
 
   try {
-    const log = await git.log({ maxCount: limit });
-    // Return only serializable data
-    const logs = log.all.map(commit => ({
-      hash: commit.hash ? String(commit.hash) : '',
-      date: commit.date ? (commit.date instanceof Date ? commit.date.toISOString() : String(commit.date)) : '',
-      message: commit.message ? String(commit.message) : '',
-      author_name: commit.author_name ? String(commit.author_name) : '',
-      author_email: commit.author_email ? String(commit.author_email) : '',
-      refs: commit.refs ? String(commit.refs) : ''
-    }));
-    return { logs };
+    // If branch is specified, get logs for that branch, otherwise get logs for current branch
+    let log;
+    if (branch) {
+      // Use git.raw to get logs for a specific branch
+      // Format: git log --format="%H|%an|%ae|%ad|%s" --date=iso -n 50 branchName
+      const logOutput = await git.raw([
+        'log',
+        `--format=%H|%an|%ae|%ad|%s|%D`,
+        '--date=iso',
+        `-n${limit}`,
+        branch
+      ]);
+      
+      // Parse the raw output
+      const lines = logOutput.trim().split('\n').filter(line => line.trim());
+      const logs = lines.map(line => {
+        const parts = line.split('|');
+        return {
+          hash: parts[0] || '',
+          author_name: parts[1] || 'Unknown',
+          author_email: parts[2] || 'unknown',
+          date: parts[3] || '',
+          message: parts[4] || 'No message',
+          refs: parts[5] || ''
+        };
+      });
+      
+      return { logs, branch: branch };
+    } else {
+      // Get logs for current branch using the normal method
+      log = await git.log({ maxCount: limit });
+      // Return only serializable data
+      const logs = log.all.map(commit => ({
+        hash: commit.hash ? String(commit.hash) : '',
+        date: commit.date ? (commit.date instanceof Date ? commit.date.toISOString() : String(commit.date)) : '',
+        message: commit.message ? String(commit.message) : '',
+        author_name: commit.author_name ? String(commit.author_name) : '',
+        author_email: commit.author_email ? String(commit.author_email) : '',
+        refs: commit.refs ? String(commit.refs) : ''
+      }));
+      return { logs, branch: null };
+    }
   } catch (error) {
     return { error: error.message };
   }

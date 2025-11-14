@@ -315,7 +315,7 @@ header h1 {
 }
 
 .branch-item:hover {
-    background: #353535;
+    background-color: rgba(74, 158, 255, 0.1);
     border-color: #4a9eff;
 }
 
