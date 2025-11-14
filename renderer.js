@@ -1842,71 +1842,31 @@ async function forcePush() {
     }
 }
 
-async function commitAndPush() {
-    const message = document.getElementById('commit-message');
+async function pushChanges() {
     const commitResult = document.getElementById('commit-result');
     
-    if (!message || !commitResult) {
+    if (!commitResult) {
         return;
     }
     
-    const commitMessage = message.value.trim();
-    
-    if (!commitMessage) {
-        commitResult.innerHTML = '<p class="error">Please enter a commit message</p>';
-        return;
-    }
-    
-    commitResult.innerHTML = '<p class="loading">Committing...</p>';
+    commitResult.innerHTML = '<p class="loading">Pushing...</p>';
     
     try {
-        const commitResult_data = await ipcRenderer.invoke('git:commit', commitMessage);
-        
-        if (commitResult_data.error) {
-            if (commitResult_data.error.includes('not initialized')) {
-                commitResult.innerHTML = `
-                    <p class="error">Error: ${commitResult_data.error}</p>
-                    <p style="margin-top: 10px; font-size: 12px;">
-                        <a href="#" id="open-settings-from-commit-push" style="color: #4a9eff; text-decoration: underline; cursor: pointer;">
-                            Configure repository in settings
-                        </a>
-                    </p>
-                `;
-                const settingsLink = document.getElementById('open-settings-from-commit-push');
-                if (settingsLink) {
-                    settingsLink.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-                        document.querySelector('[data-tab="settings"]').classList.add('active');
-                        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                        document.getElementById('settings-tab').classList.add('active');
-                        loadSettings();
-                    });
-                }
-            } else {
-                commitResult.innerHTML = `<p class="error">Error: ${commitResult_data.error}</p>`;
-            }
-            return;
-        }
-        
-        commitResult.innerHTML = '<p class="loading">Pushing...</p>';
-        
         const pushResult = await ipcRenderer.invoke('git:push');
         
         if (pushResult.error) {
-            commitResult.innerHTML = `<p class="error">Commit successful but push failed: ${pushResult.error}</p>`;
+            commitResult.innerHTML = `<p class="error">Push failed: ${pushResult.error}</p>`;
             addGitMessage('Push Error', pushResult.message || pushResult.error, 'error');
-            return;
+        } else {
+            commitResult.innerHTML = '<p class="success">✓ Push successful!</p>';
+            addGitMessage('Push Success', pushResult.message || 'Push completed successfully', 'success');
+            await loadBranches();
+            await loadCommitFiles();
+            await loadGitLogs();
         }
-        
-        commitResult.innerHTML = '<p class="success">✓ Commit and push successful!</p>';
-        addGitMessage('Push Success', pushResult.message || 'Push completed successfully', 'success');
-        message.value = '';
-        await loadBranches();
-        await loadCommitFiles(); // Refresh file lists after commit
-        await loadGitLogs(); // Refresh logs to show the new commit
     } catch (error) {
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+        addGitMessage('Push Error', error.message, 'error');
     }
 }
 
@@ -2072,7 +2032,7 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
     });
 });
 document.getElementById('commit-btn').addEventListener('click', commitChanges);
-document.getElementById('commit-push-btn').addEventListener('click', commitAndPush);
+document.getElementById('push-btn').addEventListener('click', pushChanges);
 document.getElementById('pull-btn').addEventListener('click', pullChanges);
 document.getElementById('force-push-btn').addEventListener('click', forcePush);
 
