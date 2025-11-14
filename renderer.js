@@ -1099,39 +1099,59 @@ async function loadCommitFiles() {
         if (staged.length > 0) {
             stagedFilesDiv.innerHTML = staged.map(file => {
                 const statusIcon = file.index === 'A' ? '📄' : file.index === 'M' ? '✏️' : file.index === 'D' ? '🗑️' : '📝';
-                return `<div style="padding: 4px 8px; margin: 2px 0; background: rgba(74, 158, 255, 0.1); border-left: 2px solid #4a9eff; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                return `<div class="file-item-clickable" data-file="${file.path}" data-staged="true" style="padding: 4px 8px; margin: 2px 0; background: rgba(74, 158, 255, 0.1); border-left: 2px solid #4a9eff; font-size: 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
                     <span>${statusIcon} ${file.path}</span>
-                    <button class="btn btn-small btn-secondary unstage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;">Unstage</button>
+                    <button class="btn btn-small btn-secondary unstage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;" onclick="event.stopPropagation();">Unstage</button>
                 </div>`;
             }).join('');
             
-            // Attach event listeners to unstage buttons
-            stagedFilesDiv.querySelectorAll('.unstage-file-from-commit').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const filePath = e.target.dataset.file;
-                    const button = e.target;
-                    button.disabled = true;
-                    button.textContent = 'Unstaging...';
-                    
-                    try {
-                        const result = await ipcRenderer.invoke('git:unstage-file', filePath);
-                        
-                        if (result.error) {
-                            alert(`Error: ${result.error}`);
+                // Attach click listeners to file items for showing diff
+                stagedFilesDiv.querySelectorAll('.file-item-clickable').forEach(item => {
+                    item.addEventListener('click', async (e) => {
+                        // Don't trigger if clicking the button
+                        if (e.target.classList.contains('btn') || e.target.closest('.btn')) {
+                            return;
+                        }
+                        const filePath = item.dataset.file;
+                        const isStaged = item.dataset.staged === 'true';
+                        await showFileDiff(filePath, isStaged);
+                    });
+                });
+            
+                // Attach event listeners to unstage buttons
+                stagedFilesDiv.querySelectorAll('.unstage-file-from-commit').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const filePath = e.target.dataset.file;
+                        const button = e.target;
+                        button.disabled = true;
+                        button.textContent = 'Unstaging...';
+
+                        try {
+                            const result = await ipcRenderer.invoke('git:unstage-file', filePath);
+
+                            if (result.error) {
+                                alert(`Error: ${result.error}`);
+                                button.disabled = false;
+                                button.textContent = 'Unstage';
+                            } else {
+                                // Refresh both lists
+                                await loadCommitFiles();
+                                // Ensure textarea remains accessible
+                                const textarea = document.getElementById('commit-message');
+                                if (textarea) {
+                                    textarea.style.pointerEvents = 'auto';
+                                    textarea.style.zIndex = '1';
+                                }
+                            }
+                        } catch (error) {
+                            alert(`Error: ${error.message}`);
                             button.disabled = false;
                             button.textContent = 'Unstage';
-                        } else {
-                            // Refresh both lists
-                            await loadCommitFiles();
                         }
-                    } catch (error) {
-                        alert(`Error: ${error.message}`);
-                        button.disabled = false;
-                        button.textContent = 'Unstage';
-                    }
+                    });
                 });
-            });
         } else {
             stagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">No staged files</p>';
         }
@@ -1144,16 +1164,30 @@ async function loadCommitFiles() {
                 else if (file.working_dir === '?') statusIcon = '📄';
                 else if (file.working_dir === 'D') statusIcon = '🗑️';
                 
-                return `<div style="padding: 4px 8px; margin: 2px 0; background: rgba(255, 255, 127, 0.1); border-left: 2px solid #ffff7f; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                return `<div class="file-item-clickable" data-file="${file.path}" data-staged="false" style="padding: 4px 8px; margin: 2px 0; background: rgba(255, 255, 127, 0.1); border-left: 2px solid #ffff7f; font-size: 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
                     <span>${statusIcon} ${file.path}</span>
-                    <button class="btn btn-small btn-primary stage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;">Stage</button>
+                    <button class="btn btn-small btn-primary stage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;" onclick="event.stopPropagation();">Stage</button>
                 </div>`;
             }).join('');
+            
+            // Attach click listeners to file items for showing diff
+            unstagedFilesDiv.querySelectorAll('.file-item-clickable').forEach(item => {
+                item.addEventListener('click', async (e) => {
+                    // Don't trigger if clicking the button
+                    if (e.target.classList.contains('btn') || e.target.closest('.btn')) {
+                        return;
+                    }
+                    const filePath = item.dataset.file;
+                    const isStaged = item.dataset.staged === 'false';
+                    await showFileDiff(filePath, isStaged);
+                });
+            });
             
             // Attach event listeners to stage buttons
             unstagedFilesDiv.querySelectorAll('.stage-file-from-commit').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     const filePath = e.target.dataset.file;
                     const button = e.target;
                     button.disabled = true;
@@ -1168,8 +1202,13 @@ async function loadCommitFiles() {
                             button.textContent = 'Stage';
                         } else {
                             // Refresh both lists
-                            await loadGitStatus();
                             await loadCommitFiles();
+                            // Ensure textarea remains accessible
+                            const textarea = document.getElementById('commit-message');
+                            if (textarea) {
+                                textarea.style.pointerEvents = 'auto';
+                                textarea.style.zIndex = '1';
+                            }
                         }
                     } catch (error) {
                         alert(`Error: ${error.message}`);
@@ -1579,6 +1618,133 @@ function setupContextMenuHandler() {
 if (!setupContextMenuHandler()) {
     setTimeout(() => setupContextMenuHandler(), 100);
 }
+
+// Diff modal functions
+async function showFileDiff(filePath, isStaged) {
+    const modal = document.getElementById('diff-modal');
+    const title = document.getElementById('diff-modal-title');
+    const content = document.getElementById('diff-content');
+    
+    if (!modal || !title || !content) return;
+    
+    // Show modal and set title
+    modal.style.display = 'flex';
+    content.innerHTML = '<p class="loading">Loading diff...</p>';
+    
+    try {
+        // First, get the actual file status to determine if it's really staged
+        const statusResult = await ipcRenderer.invoke('git:get-status');
+        let actualIsStaged = isStaged;
+        
+        if (statusResult.status && statusResult.status.files) {
+            const file = statusResult.status.files.find(f => f.path === filePath);
+            if (file) {
+                // Determine if file is actually staged based on index status
+                // Staged: index is not ' ' and not '?'
+                actualIsStaged = (file.index !== ' ' && file.index !== '?');
+                
+                // Update title based on actual status
+                if (actualIsStaged) {
+                    title.textContent = `Staged Changes: ${filePath}`;
+                } else if (file.working_dir === 'M' || file.working_dir === 'D') {
+                    title.textContent = `Unstaged Changes: ${filePath}`;
+                } else if (file.working_dir === '?') {
+                    title.textContent = `New File: ${filePath}`;
+                } else {
+                    title.textContent = `Changes: ${filePath}`;
+                }
+            } else {
+                title.textContent = `Changes: ${filePath}`;
+            }
+        } else {
+            title.textContent = `${isStaged ? 'Staged' : 'Unstaged'} Changes: ${filePath}`;
+        }
+        
+        // Get diff for the specific file using the actual staged status
+        const result = await ipcRenderer.invoke('git:get-diff', filePath, actualIsStaged);
+        
+        if (result.error) {
+            content.innerHTML = `<p class="error">Error loading diff: ${result.error}</p>`;
+            return;
+        }
+        
+        // Format and display the diff
+        const diff = result.diff || '';
+        
+        if (!diff || diff.trim() === '') {
+            // Try to get file status to see if it's a new file
+            if (statusResult.status && statusResult.status.files) {
+                const file = statusResult.status.files.find(f => f.path === filePath);
+                if (file && (file.working_dir === '?' || file.index === '?')) {
+                    content.innerHTML = '<p class="placeholder">This is a new/untracked file. The full file content will be shown as a diff.</p>';
+                } else {
+                    content.innerHTML = '<p class="placeholder">No changes to display for this file.</p>';
+                }
+            } else {
+                content.innerHTML = '<p class="placeholder">No changes to display. Could not get file status.</p>';
+            }
+            return;
+        }
+        
+        // Parse and format diff with syntax highlighting
+        const formattedDiff = formatDiff(diff);
+        content.innerHTML = formattedDiff;
+        
+    } catch (error) {
+        content.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    }
+}
+
+function formatDiff(diff) {
+    const lines = diff.split('\n');
+    let html = '';
+    
+    lines.forEach(line => {
+        let className = 'diff-line';
+        if (line.startsWith('+++') || line.startsWith('---')) {
+            className += ' header';
+        } else if (line.startsWith('+') && !line.startsWith('+++')) {
+            className += ' added';
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+            className += ' removed';
+        } else if (line.startsWith('@@')) {
+            className += ' header';
+        } else {
+            className += ' context';
+        }
+        
+        html += `<div class="${className}">${escapeHtml(line)}</div>`;
+    });
+    
+    return html;
+}
+
+function hideDiffModal() {
+    const modal = document.getElementById('diff-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Set up diff modal close button
+function setupDiffModal() {
+    const closeBtn = document.getElementById('diff-modal-close');
+    const modal = document.getElementById('diff-modal');
+    
+    if (closeBtn) {
+        closeBtn.onclick = hideDiffModal;
+    }
+    
+    if (modal) {
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                hideDiffModal();
+            }
+        };
+    }
+}
+
+setupDiffModal();
 
 // Git branch buttons
 const refreshBranchesBtn = document.getElementById('refresh-branches');

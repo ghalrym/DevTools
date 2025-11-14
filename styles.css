@@ -952,3 +952,65 @@ header h1 {
     background: #4a4a4a;
 }
 
+/* Diff Modal Styles */
+.diff-modal-content {
+    min-width: 600px;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.diff-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #444;
+}
+
+.diff-modal-header h3 {
+    margin: 0;
+    color: #e0e0e0;
+}
+
+.diff-content {
+    flex: 1;
+    overflow: auto;
+    background: #1a1a1a;
+    padding: 12px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.diff-line {
+    padding: 2px 4px;
+    margin: 1px 0;
+}
+
+.diff-line.added {
+    background: rgba(0, 200, 0, 0.2);
+    color: #7fff7f;
+}
+
+.diff-line.removed {
+    background: rgba(200, 0, 0, 0.2);
+    color: #ff7f7f;
+}
+
+.diff-line.context {
+    color: #888;
+}
+
+.diff-line.header {
+    color: #4a9eff;
+    font-weight: bold;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+

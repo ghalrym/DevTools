@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Git & Docker Manager</title>
+    <title>Andrew's Dev Tool</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🐳 Git & Docker Manager</h1>
+            <h1>🐳 Andrew's Dev Tool</h1>
         </header>
 
         <div class="tabs">
@@ -140,6 +140,17 @@
     <!-- Context Menu for Branches -->
     <div id="branch-context-menu" class="context-menu" style="display: none;">
         <div class="context-menu-item" id="context-delete-branch">🗑️ Delete Branch</div>
+    </div>
+
+    <!-- Diff Modal -->
+    <div id="diff-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content diff-modal-content">
+            <div class="diff-modal-header">
+                <h3 id="diff-modal-title">File Diff</h3>
+                <button id="diff-modal-close" class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;">✕ Close</button>
+            </div>
+            <div id="diff-content" class="diff-content"></div>
+        </div>
     </div>
 
     <script src="renderer.js"></script>

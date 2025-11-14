@@ -415,16 +415,96 @@ ipcMain.handle('git:push', async (event, remote = 'origin', branch = null) => {
   }
 });
 
-ipcMain.handle('git:get-diff', async (event, filePath = null) => {
+ipcMain.handle('git:get-diff', async (event, filePath = null, staged = false) => {
   if (!git) {
     return { error: 'Git repository not initialized' };
   }
 
   try {
-    const diff = filePath 
-      ? await git.diff([filePath])
-      : await git.diff();
-    return { diff };
+    let diff;
+    if (staged) {
+      // Staged diff: shows changes between HEAD and index
+      if (filePath) {
+        diff = await git.raw(['diff', '--cached', '--', filePath]);
+      } else {
+        diff = await git.raw(['diff', '--cached']);
+      }
+    } else {
+      // Unstaged diff: shows changes between index and working directory
+      if (filePath) {
+        diff = await git.raw(['diff', '--', filePath]);
+      } else {
+        diff = await git.raw(['diff']);
+      }
+    }
+    
+    // If diff is empty, it might be a new file - try to get the file content
+    if ((!diff || diff.trim() === '') && filePath) {
+      const fs = require('fs');
+      const path = require('path');
+      try {
+        const status = await git.status();
+        const file = status.files.find(f => f.path === filePath);
+        
+        if (file) {
+          // Check if it's a new/untracked file
+          if (file.working_dir === '?' || file.index === '?') {
+            // New/untracked file - show the file content
+            // Get the repo path from git instance
+            let repoPath;
+            try {
+              repoPath = await git.revparse(['--show-toplevel']);
+            } catch (e) {
+              // Try alternative method
+              repoPath = null;
+            }
+            
+            // Get base directory - simple-git stores it in _baseDir
+            let basePath = process.cwd();
+            if (git._baseDir) {
+              basePath = git._baseDir.toString();
+            } else if (repoPath) {
+              basePath = repoPath;
+            }
+            
+            const fullPath = path.join(basePath, filePath);
+            if (fs.existsSync(fullPath)) {
+              const content = fs.readFileSync(fullPath, 'utf8');
+              // Format as a new file diff
+              diff = `diff --git a/${filePath} b/${filePath}\nnew file mode 100644\nindex 0000000..0000000\n--- /dev/null\n+++ b/${filePath}\n${content.split('\n').map(line => `+${line}`).join('\n')}`;
+            }
+          } else if (staged && file.index !== ' ' && file.index !== '?') {
+            // File is staged but diff is empty - might be a binary file or all content is new
+            // Try to get the diff with more options
+            try {
+              diff = await git.raw(['diff', '--cached', '--text', '--', filePath]);
+            } catch (e) {
+              // If that fails, try without --text
+              try {
+                diff = await git.raw(['diff', '--cached', '--', filePath]);
+              } catch (e2) {
+                // Still empty, might be binary
+              }
+            }
+          } else if (!staged && (file.working_dir === 'M' || file.working_dir === 'D')) {
+            // File is modified but diff is empty - try with more options
+            try {
+              diff = await git.raw(['diff', '--text', '--', filePath]);
+            } catch (e) {
+              try {
+                diff = await git.raw(['diff', '--', filePath]);
+              } catch (e2) {
+                // Still empty
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // If we can't read the file, just return empty diff
+      }
+    }
+    
+    return { diff: diff || '' };
   } catch (error) {
     return { error: error.message };
   }
