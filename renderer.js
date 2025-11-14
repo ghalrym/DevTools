@@ -770,35 +770,82 @@ async function loadBranches() {
         return;
     }
     
-    if (result.branches.length === 0) {
+    const localBranches = result.local || [];
+    const remoteBranches = result.remote || [];
+    
+    if (localBranches.length === 0 && remoteBranches.length === 0) {
         branchesList.innerHTML = '<p class="placeholder">No branches found</p>';
         return;
     }
     
     branchesList.innerHTML = '';
     
-    result.branches.forEach(branch => {
-        const item = document.createElement('div');
-        item.className = `branch-item ${branch.current ? 'current' : ''}`;
-        item.dataset.branchName = branch.name;
+    // Local branches group
+    if (localBranches.length > 0) {
+        const localGroup = document.createElement('div');
+        localGroup.className = 'branch-group';
+        localGroup.innerHTML = '<div class="branch-group-header">📁 Local</div>';
         
-        item.innerHTML = `
-            <span class="branch-name">${escapeHtml(branch.name)}</span>
-            ${branch.current ? '<span class="branch-indicator">current</span>' : ''}
-        `;
+        const localList = document.createElement('div');
+        localList.className = 'branch-group-list';
         
-        if (!branch.current) {
-            item.addEventListener('click', () => checkoutBranch(branch.name));
-        }
-        
-        // Add right-click context menu
-        item.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            showBranchContextMenu(e, branch.name, branch.current);
+        localBranches.forEach(branch => {
+            const item = document.createElement('div');
+            item.className = `branch-item ${branch.current ? 'current' : ''}`;
+            item.dataset.branchName = branch.name;
+            item.dataset.branchType = 'local';
+            
+            item.innerHTML = `
+                <span class="branch-name">${escapeHtml(branch.name)}</span>
+                ${branch.current ? '<span class="branch-indicator">current</span>' : ''}
+            `;
+            
+            if (!branch.current) {
+                item.addEventListener('click', () => checkoutBranch(branch.name));
+            }
+            
+            // Add right-click context menu (only for local branches)
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showBranchContextMenu(e, branch.name, branch.current);
+            });
+            
+            localList.appendChild(item);
         });
         
-        branchesList.appendChild(item);
-    });
+        localGroup.appendChild(localList);
+        branchesList.appendChild(localGroup);
+    }
+    
+    // Remote branches group
+    if (remoteBranches.length > 0) {
+        const remoteGroup = document.createElement('div');
+        remoteGroup.className = 'branch-group';
+        remoteGroup.innerHTML = '<div class="branch-group-header">🌐 Server</div>';
+        
+        const remoteList = document.createElement('div');
+        remoteList.className = 'branch-group-list';
+        
+        remoteBranches.forEach(branch => {
+            const item = document.createElement('div');
+            item.className = 'branch-item branch-item-remote';
+            item.dataset.branchName = branch.name;
+            item.dataset.branchFullName = branch.fullName;
+            item.dataset.branchType = 'remote';
+            
+            item.innerHTML = `
+                <span class="branch-name">${escapeHtml(branch.name)}</span>
+            `;
+            
+            // Clicking a remote branch will checkout and track it
+            item.addEventListener('click', () => checkoutRemoteBranch(branch.fullName, branch.name));
+            
+            remoteList.appendChild(item);
+        });
+        
+        remoteGroup.appendChild(remoteList);
+        branchesList.appendChild(remoteGroup);
+    }
 }
 
 async function checkoutBranch(branchName) {
@@ -810,6 +857,21 @@ async function checkoutBranch(branchName) {
     
     if (result.error) {
         alert(`Error switching branch: ${result.error}`);
+    } else {
+        await loadBranches();
+        await loadCommitFiles();
+    }
+}
+
+async function checkoutRemoteBranch(remoteBranchName, localBranchName) {
+    if (!confirm(`Checkout and track remote branch "${localBranchName}"?`)) {
+        return;
+    }
+    
+    const result = await ipcRenderer.invoke('git:checkout-remote-branch', remoteBranchName, localBranchName);
+    
+    if (result.error) {
+        alert(`Error checking out remote branch: ${result.error}`);
     } else {
         await loadBranches();
         await loadCommitFiles();

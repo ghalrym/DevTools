@@ -1014,3 +1014,31 @@ header h1 {
     margin-bottom: 4px;
 }
 
+/* Branch Groups */
+.branch-group {
+    margin-bottom: 20px;
+}
+
+.branch-group-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid #333;
+    margin-bottom: 4px;
+}
+
+.branch-group-list {
+    padding: 0 4px;
+}
+
+.branch-item-remote {
+    opacity: 0.9;
+}
+
+.branch-item-remote:hover {
+    opacity: 1;
+}
+

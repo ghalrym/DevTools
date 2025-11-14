@@ -516,12 +516,38 @@ ipcMain.handle('git:get-branches', async () => {
   }
 
   try {
+    // Get local branches
     const branchSummary = await git.branchLocal();
-    const branches = branchSummary.all.map(branch => ({
+    const localBranches = branchSummary.all.map(branch => ({
       name: branch,
-      current: branch === branchSummary.current
+      current: branch === branchSummary.current,
+      type: 'local'
     }));
-    return { branches };
+    
+    // Get remote branches
+    let remoteBranches = [];
+    try {
+      const remoteSummary = await git.branch(['-r']);
+      remoteBranches = remoteSummary.all
+        .filter(branch => !branch.includes('HEAD'))
+        .map(branch => {
+          // Remove 'origin/' or other remote prefix
+          const name = branch.replace(/^[^/]+\//, '');
+          return {
+            name: name,
+            fullName: branch,
+            current: false,
+            type: 'remote'
+          };
+        });
+    } catch (error) {
+      // If remote branches can't be fetched, just continue with local branches
+    }
+    
+    return { 
+      local: localBranches,
+      remote: remoteBranches
+    };
   } catch (error) {
     return { error: error.message };
   }
@@ -534,6 +560,20 @@ ipcMain.handle('git:checkout-branch', async (event, branchName) => {
 
   try {
     await git.checkout(branchName);
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('git:checkout-remote-branch', async (event, remoteBranchName, localBranchName) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    // Checkout remote branch and create a local tracking branch
+    await git.checkout(['-b', localBranchName, remoteBranchName]);
     return { success: true };
   } catch (error) {
     return { error: error.message };
