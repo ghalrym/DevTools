@@ -786,8 +786,20 @@ async function loadBranches() {
         localGroup.className = 'branch-group';
         localGroup.innerHTML = '<div class="branch-group-header">📁 Local</div>';
         
+        // Add search bar for local branches
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'branch-search-container';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'branch-search-input';
+        searchInput.placeholder = 'Search local branches...';
+        searchInput.id = 'local-branch-search';
+        searchContainer.appendChild(searchInput);
+        localGroup.appendChild(searchContainer);
+        
         const localList = document.createElement('div');
         localList.className = 'branch-group-list';
+        localList.id = 'local-branches-list';
         
         localBranches.forEach(branch => {
             const item = document.createElement('div');
@@ -811,6 +823,35 @@ async function loadBranches() {
             });
             
             localList.appendChild(item);
+        });
+        
+        // Add search functionality
+        searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            const items = localList.querySelectorAll('.branch-item');
+            
+            items.forEach(item => {
+                const branchName = item.dataset.branchName.toLowerCase();
+                if (branchName.includes(searchTerm)) {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            // Show message if no results
+            const visibleItems = Array.from(items).filter(item => item.style.display !== 'none');
+            let noResultsMsg = localList.querySelector('.no-results-message');
+            if (visibleItems.length === 0 && searchTerm !== '') {
+                if (!noResultsMsg) {
+                    noResultsMsg = document.createElement('div');
+                    noResultsMsg.className = 'no-results-message';
+                    noResultsMsg.textContent = 'No branches found';
+                    localList.appendChild(noResultsMsg);
+                }
+            } else if (noResultsMsg) {
+                noResultsMsg.remove();
+            }
         });
         
         localGroup.appendChild(localList);
