@@ -427,7 +427,29 @@ ipcMain.handle('git:commit', async (event, message) => {
     await git.commit(message);
     const status = await git.status();
     const log = await git.log({ maxCount: 1 });
-    return { success: true, status, lastCommit: log.latest };
+    
+    // Return only serializable data
+    return { 
+      success: true, 
+      status: {
+        current: status.current,
+        tracking: status.tracking,
+        ahead: status.ahead,
+        behind: status.behind,
+        files: status.files ? status.files.map(f => ({
+          path: f.path,
+          index: f.index,
+          working_dir: f.working_dir
+        })) : []
+      },
+      lastCommit: log.latest ? {
+        hash: log.latest.hash,
+        date: log.latest.date,
+        message: log.latest.message,
+        author_name: log.latest.author_name,
+        author_email: log.latest.author_email
+      } : null
+    };
   } catch (error) {
     return { error: error.message };
   }

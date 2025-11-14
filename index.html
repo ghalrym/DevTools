@@ -59,29 +59,12 @@
                 </div>
                 <div class="git-main">
                     <div class="git-tabs-inner">
-                        <button class="git-tab-button active" data-git-tab="status">Status</button>
+                        <button class="git-tab-button active" data-git-tab="commit">Commit</button>
                         <button class="git-tab-button" data-git-tab="logs">Logs</button>
-                        <button class="git-tab-button" data-git-tab="commit">Commit</button>
-                    </div>
-
-                    <!-- Git Status Tab -->
-                    <div id="git-status-tab" class="git-tab-content active">
-                        <h2>Repository Status</h2>
-                        <div id="git-status-content" class="git-content">
-                            <p class="placeholder">Select a repository to view status</p>
-                        </div>
-                    </div>
-
-                    <!-- Git Logs Tab -->
-                    <div id="git-logs-tab" class="git-tab-content">
-                        <h2>Commit History</h2>
-                        <div id="git-logs-content" class="git-content">
-                            <p class="placeholder">Select a repository to view logs</p>
-                        </div>
                     </div>
 
                     <!-- Git Commit Tab -->
-                    <div id="git-commit-tab" class="git-tab-content">
+                    <div id="git-commit-tab" class="git-tab-content active">
                         <h2>Commit Changes</h2>
                         <div class="commit-form">
                             <textarea id="commit-message" placeholder="Enter commit message..." rows="4"></textarea>

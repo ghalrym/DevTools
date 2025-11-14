@@ -28,7 +28,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
         } else if (tabName === 'git') {
             // Always try to load, let the functions handle errors gracefully
             loadBranches();
-            loadGitStatus();
+            loadCommitFiles();
         } else if (tabName === 'settings') {
             loadSettings();
         }
@@ -684,7 +684,7 @@ async function setRepository(repoPath = null) {
     
     // Force reload of all git data
     await Promise.all([
-        loadGitStatus(),
+        loadCommitFiles(),
         loadBranches()
     ]);
     return true;
@@ -806,14 +806,14 @@ async function checkoutBranch(branchName) {
         alert(`Error switching branch: ${result.error}`);
     } else {
         await loadBranches();
-        await loadGitStatus();
+        await loadCommitFiles();
     }
 }
 
 async function loadGitStatus() {
-    const statusContent = document.getElementById('git-status-content');
-    
-    if (!statusContent) return;
+    // Status tab removed - this function is kept for internal use but doesn't update UI
+    // The commit tab handles file display now
+    return;
     
     const result = await ipcRenderer.invoke('git:get-status');
     
@@ -932,7 +932,6 @@ function attachFileActionListeners() {
             if (result.error) {
                 alert(`Error: ${result.error}`);
             } else {
-                await loadGitStatus();
                 await loadCommitFiles(); // Refresh commit tab file lists
             }
         });
@@ -946,7 +945,6 @@ function attachFileActionListeners() {
             if (result.error) {
                 alert(`Error: ${result.error}`);
             } else {
-                await loadGitStatus();
                 await loadCommitFiles(); // Refresh commit tab file lists
             }
         });
@@ -1049,8 +1047,40 @@ async function loadCommitFiles() {
         if (staged.length > 0) {
             stagedFilesDiv.innerHTML = staged.map(file => {
                 const statusIcon = file.index === 'A' ? '📄' : file.index === 'M' ? '✏️' : file.index === 'D' ? '🗑️' : '📝';
-                return `<div style="padding: 4px 8px; margin: 2px 0; background: rgba(74, 158, 255, 0.1); border-left: 2px solid #4a9eff; font-size: 12px;">${statusIcon} ${file.path}</div>`;
+                return `<div style="padding: 4px 8px; margin: 2px 0; background: rgba(74, 158, 255, 0.1); border-left: 2px solid #4a9eff; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>${statusIcon} ${file.path}</span>
+                    <button class="btn btn-small btn-secondary unstage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;">Unstage</button>
+                </div>`;
             }).join('');
+            
+            // Attach event listeners to unstage buttons
+            stagedFilesDiv.querySelectorAll('.unstage-file-from-commit').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const filePath = e.target.dataset.file;
+                    const button = e.target;
+                    button.disabled = true;
+                    button.textContent = 'Unstaging...';
+                    
+                    try {
+                        const result = await ipcRenderer.invoke('git:unstage-file', filePath);
+                        
+                        if (result.error) {
+                            alert(`Error: ${result.error}`);
+                            button.disabled = false;
+                            button.textContent = 'Unstage';
+                        } else {
+                            // Refresh both lists
+                            await loadCommitFiles();
+                        }
+                    } catch (error) {
+                        console.error('Error unstaging file:', error);
+                        alert(`Error: ${error.message}`);
+                        button.disabled = false;
+                        button.textContent = 'Unstage';
+                    }
+                });
+            });
         } else {
             stagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">No staged files</p>';
         }
@@ -1159,7 +1189,6 @@ async function commitChanges() {
         
         commitResult.innerHTML = '<p class="success">✓ Commit successful!</p>';
         message.value = '';
-        await loadGitStatus();
         await loadBranches();
         await loadCommitFiles(); // Refresh file lists after commit
     } catch (error) {
@@ -1227,7 +1256,6 @@ async function commitAndPush() {
         
         commitResult.innerHTML = '<p class="success">✓ Commit and push successful!</p>';
         message.value = '';
-        await loadGitStatus();
         await loadBranches();
         await loadCommitFiles(); // Refresh file lists after commit
     } catch (error) {
@@ -1239,7 +1267,7 @@ async function commitAndPush() {
 // Event listeners for Git
 document.getElementById('refresh-branches').addEventListener('click', async () => {
     await loadBranches();
-    await loadGitStatus();
+    await loadCommitFiles();
 });
 const openSettingsBtn = document.getElementById('open-settings');
 if (openSettingsBtn) {
@@ -1332,12 +1360,7 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
         if (tabName === 'logs') {
             // Always try to load logs, let the function handle errors gracefully
             loadGitLogs();
-        } else if (tabName === 'status') {
-            // Reload status when switching to status tab
-            loadGitStatus();
         } else if (tabName === 'commit') {
-            // Ensure status is loaded for commit tab
-            loadGitStatus();
             // Load staged/unstaged files for commit tab
             loadCommitFiles();
         }
