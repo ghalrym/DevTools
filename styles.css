@@ -296,6 +296,59 @@ header h1 {
     color: #e0e0e0;
 }
 
+.branches-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.branch-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    background: #2d2d2d;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.branch-item:hover {
+    background: #353535;
+    border-color: #4a9eff;
+}
+
+.branch-item.current {
+    background: #1a3a5a;
+    border-color: #4a9eff;
+}
+
+.branch-name {
+    font-weight: 600;
+    color: #4a9eff;
+    font-size: 14px;
+    flex: 1;
+}
+
+.branch-item.current .branch-name {
+    color: #7fff7f;
+}
+
+.branch-indicator {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: #3d3d3d;
+    color: #888;
+    font-weight: 500;
+}
+
+.branch-item.current .branch-indicator {
+    background: #2d5a2d;
+    color: #7fff7f;
+}
+
 .repo-selector {
     margin-bottom: 20px;
 }

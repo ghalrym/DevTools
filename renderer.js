@@ -26,6 +26,8 @@ document.querySelectorAll('.tab-button').forEach(button => {
                 startFollowingLogs();
             }
         } else if (tabName === 'git') {
+            // Always try to load, let the functions handle errors gracefully
+            loadBranches();
             loadGitStatus();
         } else if (tabName === 'settings') {
             loadSettings();
@@ -33,22 +35,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
     });
 });
 
-// Git inner tab switching
-document.querySelectorAll('.git-tab-button').forEach(button => {
-    button.addEventListener('click', () => {
-        const tabName = button.dataset.gitTab;
-        
-        document.querySelectorAll('.git-tab-button').forEach(btn => btn.classList.remove('active'));
-        button.classList.add('active');
-        
-        document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
-        document.getElementById(`git-${tabName}-tab`).classList.add('active');
-        
-        if (tabName === 'logs') {
-            loadGitLogs();
-        }
-    });
-});
+// Git inner tab switching is handled in event listeners section below
 
 // Docker functionality
 let selectedContainerId = null;
@@ -663,12 +650,16 @@ async function setRepository(repoPath = null) {
         if (input) {
             repoPath = input.value.trim() || process.cwd();
         } else {
-            repoPath = localStorage.getItem('gitRepoPath') || process.cwd();
+            const saved = await ipcRenderer.invoke('config:get-git-repo-path');
+            repoPath = saved.path || process.cwd();
         }
     }
     
-    // Normalize path - use empty string if it's the current directory
-    const normalizedPath = repoPath === process.cwd() ? '' : repoPath;
+    // Ensure we have a valid path
+    if (!repoPath || repoPath.trim() === '') {
+        repoPath = process.cwd();
+    }
+    
     currentRepoPath = repoPath;
     
     const result = await ipcRenderer.invoke('git:set-repo', repoPath);
@@ -683,34 +674,52 @@ async function setRepository(repoPath = null) {
         return false;
     }
     
-    // Save to localStorage (save the actual path, not normalized)
-    localStorage.setItem('gitRepoPath', repoPath);
+    // Note: Config saving is now handled in the settings button click handler
+    // This function just initializes git, config should already be saved
     
     // Update settings input if it exists
     if (document.getElementById('settings-repo-path')) {
         document.getElementById('settings-repo-path').value = repoPath;
     }
     
-    await loadGitStatus();
+    // Force reload of all git data
+    await Promise.all([
+        loadGitStatus(),
+        loadBranches()
+    ]);
     return true;
 }
 
-function loadSettings() {
-    // Load saved repository path from localStorage
-    const savedRepoPath = localStorage.getItem('gitRepoPath');
-    if (savedRepoPath && document.getElementById('settings-repo-path')) {
-        document.getElementById('settings-repo-path').value = savedRepoPath;
+async function loadSettings() {
+    // Load saved repository path from config file via IPC
+    const saved = await ipcRenderer.invoke('config:get-git-repo-path');
+    const savedRepoPath = saved.path;
+    console.log('Loading settings, saved path:', savedRepoPath);
+    
+    if (document.getElementById('settings-repo-path')) {
+        if (savedRepoPath) {
+            document.getElementById('settings-repo-path').value = savedRepoPath;
+            console.log('Set input value to:', savedRepoPath);
+        } else {
+            document.getElementById('settings-repo-path').value = '';
+        }
     }
     
     // Update status
-    updateSettingsRepoStatus();
+    await updateSettingsRepoStatus();
 }
 
 async function updateSettingsRepoStatus() {
     const statusDiv = document.getElementById('settings-repo-status');
     if (!statusDiv) return;
     
-    const repoPath = document.getElementById('settings-repo-path')?.value.trim() || localStorage.getItem('gitRepoPath') || 'Not set';
+    const inputValue = document.getElementById('settings-repo-path')?.value.trim();
+    let repoPath = inputValue;
+    
+    if (!repoPath) {
+        const saved = await ipcRenderer.invoke('config:get-git-repo-path');
+        repoPath = saved.path || 'Not set';
+    }
     
     if (repoPath && repoPath !== 'Not set') {
         const result = await ipcRenderer.invoke('git:set-repo', repoPath);
@@ -724,64 +733,163 @@ async function updateSettingsRepoStatus() {
     }
 }
 
+async function loadBranches() {
+    const branchesList = document.getElementById('branches-list');
+    
+    if (!branchesList) return;
+    
+    const result = await ipcRenderer.invoke('git:get-branches');
+    
+    if (result.error) {
+        // If repository not initialized, show helpful message
+        if (result.error.includes('not initialized')) {
+            branchesList.innerHTML = `
+                <p class="placeholder">No repository configured</p>
+                <p style="margin-top: 10px; font-size: 12px; color: #888;">
+                    <a href="#" id="open-settings-from-branches" style="color: #4a9eff; text-decoration: underline; cursor: pointer;">
+                        Configure repository in settings
+                    </a>
+                </p>
+            `;
+            // Add event listener for the settings link
+            const settingsLink = document.getElementById('open-settings-from-branches');
+            if (settingsLink) {
+                settingsLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    // Switch to settings tab
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.querySelector('[data-tab="settings"]').classList.add('active');
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                    document.getElementById('settings-tab').classList.add('active');
+                    loadSettings();
+                });
+            }
+        } else {
+            branchesList.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        }
+        return;
+    }
+    
+    if (result.branches.length === 0) {
+        branchesList.innerHTML = '<p class="placeholder">No branches found</p>';
+        return;
+    }
+    
+    branchesList.innerHTML = '';
+    
+    result.branches.forEach(branch => {
+        const item = document.createElement('div');
+        item.className = `branch-item ${branch.current ? 'current' : ''}`;
+        item.dataset.branchName = branch.name;
+        
+        item.innerHTML = `
+            <span class="branch-name">${escapeHtml(branch.name)}</span>
+            ${branch.current ? '<span class="branch-indicator">current</span>' : ''}
+        `;
+        
+        if (!branch.current) {
+            item.addEventListener('click', () => checkoutBranch(branch.name));
+        }
+        
+        branchesList.appendChild(item);
+    });
+}
+
+async function checkoutBranch(branchName) {
+    if (!confirm(`Switch to branch "${branchName}"?`)) {
+        return;
+    }
+    
+    const result = await ipcRenderer.invoke('git:checkout-branch', branchName);
+    
+    if (result.error) {
+        alert(`Error switching branch: ${result.error}`);
+    } else {
+        await loadBranches();
+        await loadGitStatus();
+    }
+}
+
 async function loadGitStatus() {
     const statusContent = document.getElementById('git-status-content');
-    const repoStatus = document.getElementById('repo-status');
+    
+    if (!statusContent) return;
     
     const result = await ipcRenderer.invoke('git:get-status');
     
     if (result.error) {
-        statusContent.innerHTML = `<p class="error">Error: ${result.error}</p>`;
-        repoStatus.innerHTML = `<p class="error">${result.error}</p>`;
+        // If repository not initialized, show helpful message
+        if (result.error.includes('not initialized')) {
+            statusContent.innerHTML = `
+                <p class="placeholder">No repository configured</p>
+                <p style="margin-top: 10px; font-size: 12px; color: #888;">
+                    <a href="#" id="open-settings-from-status" style="color: #4a9eff; text-decoration: underline; cursor: pointer;">
+                        Configure repository in settings
+                    </a>
+                </p>
+            `;
+            const settingsLink = document.getElementById('open-settings-from-status');
+            if (settingsLink) {
+                settingsLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.querySelector('[data-tab="settings"]').classList.add('active');
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                    document.getElementById('settings-tab').classList.add('active');
+                    loadSettings();
+                });
+            }
+        } else {
+            statusContent.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        }
         return;
     }
     
     const status = result.status;
     
-    // Update repo status sidebar
-    repoStatus.innerHTML = `
-        <p><strong>Branch:</strong> <span class="branch">${status.current}</span></p>
-        <p><strong>Files:</strong> ${status.files.length} changed</p>
-        <p><strong>Staged:</strong> ${status.staged.length}</p>
-        <p><strong>Unstaged:</strong> ${status.not_added.length + status.modified.length}</p>
-    `;
-    
     // Update status content
-    if (status.files.length === 0) {
+    const files = status.files || [];
+    if (files.length === 0) {
         statusContent.innerHTML = '<p class="placeholder">Working directory clean</p>';
         return;
     }
     
     let html = '<div class="file-list">';
     
+    // Group files by status
+    const staged = files.filter(f => f.index !== ' ' && f.index !== '?');
+    const modified = files.filter(f => f.working_dir === 'M');
+    const notAdded = files.filter(f => f.index === '?' || f.working_dir === '?');
+    const deleted = files.filter(f => f.working_dir === 'D');
+    
     // Staged files
-    if (status.staged.length > 0) {
+    if (staged.length > 0) {
         html += '<h3 style="margin-bottom: 10px; color: #4a9eff;">Staged Files</h3>';
-        status.staged.forEach(file => {
+        staged.forEach(file => {
             html += createFileItem(file, 'staged');
         });
     }
     
     // Modified files
-    if (status.modified.length > 0) {
+    if (modified.length > 0) {
         html += '<h3 style="margin-top: 20px; margin-bottom: 10px; color: #ffff7f;">Modified Files</h3>';
-        status.modified.forEach(file => {
+        modified.forEach(file => {
             html += createFileItem(file, 'modified');
         });
     }
     
     // Not added files
-    if (status.not_added.length > 0) {
+    if (notAdded.length > 0) {
         html += '<h3 style="margin-top: 20px; margin-bottom: 10px; color: #7fff7f;">Untracked Files</h3>';
-        status.not_added.forEach(file => {
+        notAdded.forEach(file => {
             html += createFileItem(file, 'added');
         });
     }
     
     // Deleted files
-    if (status.deleted.length > 0) {
+    if (deleted.length > 0) {
         html += '<h3 style="margin-top: 20px; margin-bottom: 10px; color: #ff7f7f;">Deleted Files</h3>';
-        status.deleted.forEach(file => {
+        deleted.forEach(file => {
             html += createFileItem(file, 'deleted');
         });
     }
@@ -845,143 +953,331 @@ function attachFileActionListeners() {
 
 async function loadGitLogs() {
     const logsContent = document.getElementById('git-logs-content');
+    
+    if (!logsContent) {
+        console.error('git-logs-content element not found');
+        return;
+    }
+    
     logsContent.innerHTML = '<p class="loading">Loading commit history...</p>';
     
-    const result = await ipcRenderer.invoke('git:get-logs', 50);
-    
-    if (result.error) {
-        logsContent.innerHTML = `<p class="error">Error: ${result.error}</p>`;
-        return;
+    try {
+        const result = await ipcRenderer.invoke('git:get-logs', 50);
+        
+        if (result.error) {
+            // If repository not initialized, show helpful message
+            if (result.error.includes('not initialized')) {
+                logsContent.innerHTML = `
+                    <p class="placeholder">No repository configured</p>
+                    <p style="margin-top: 10px; font-size: 12px; color: #888;">
+                        <a href="#" id="open-settings-from-logs" style="color: #4a9eff; text-decoration: underline; cursor: pointer;">
+                            Configure repository in settings
+                        </a>
+                    </p>
+                `;
+                const settingsLink = document.getElementById('open-settings-from-logs');
+                if (settingsLink) {
+                    settingsLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                        document.querySelector('[data-tab="settings"]').classList.add('active');
+                        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                        document.getElementById('settings-tab').classList.add('active');
+                        loadSettings();
+                    });
+                }
+            } else {
+                logsContent.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+            }
+            return;
+        }
+        
+        if (!result.logs || result.logs.length === 0) {
+            logsContent.innerHTML = '<p class="placeholder">No commits found</p>';
+            return;
+        }
+        
+        let html = '';
+        result.logs.forEach(commit => {
+            html += `
+                <div class="commit-log-item">
+                    <div class="commit-hash">${commit.hash ? commit.hash.substring(0, 7) : 'N/A'}</div>
+                    <div class="commit-message">${escapeHtml(commit.message || 'No message')}</div>
+                    <div class="commit-author">${commit.author_name || 'Unknown'} &lt;${commit.author_email || 'unknown'}&gt; - ${commit.date ? new Date(commit.date).toLocaleString() : 'Unknown date'}</div>
+                </div>
+            `;
+        });
+        
+        logsContent.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading git logs:', error);
+        logsContent.innerHTML = `<p class="error">Error loading logs: ${error.message}</p>`;
     }
-    
-    if (result.logs.length === 0) {
-        logsContent.innerHTML = '<p class="placeholder">No commits found</p>';
-        return;
-    }
-    
-    let html = '';
-    result.logs.forEach(commit => {
-        html += `
-            <div class="commit-log-item">
-                <div class="commit-hash">${commit.hash.substring(0, 7)}</div>
-                <div class="commit-message">${escapeHtml(commit.message)}</div>
-                <div class="commit-author">${commit.author_name} &lt;${commit.author_email}&gt; - ${new Date(commit.date).toLocaleString()}</div>
-            </div>
-        `;
-    });
-    
-    logsContent.innerHTML = html;
 }
 
 async function commitChanges() {
-    const message = document.getElementById('commit-message').value.trim();
+    const message = document.getElementById('commit-message');
     const commitResult = document.getElementById('commit-result');
     
-    if (!message) {
+    if (!message || !commitResult) {
+        console.error('Commit form elements not found');
+        return;
+    }
+    
+    const commitMessage = message.value.trim();
+    
+    if (!commitMessage) {
         commitResult.innerHTML = '<p class="error">Please enter a commit message</p>';
         return;
     }
     
     commitResult.innerHTML = '<p class="loading">Committing...</p>';
     
-    const result = await ipcRenderer.invoke('git:commit', message);
-    
-    if (result.error) {
-        commitResult.innerHTML = `<p class="error">Error: ${result.error}</p>`;
-        return;
+    try {
+        const result = await ipcRenderer.invoke('git:commit', commitMessage);
+        
+        if (result.error) {
+            if (result.error.includes('not initialized')) {
+                commitResult.innerHTML = `
+                    <p class="error">Error: ${result.error}</p>
+                    <p style="margin-top: 10px; font-size: 12px;">
+                        <a href="#" id="open-settings-from-commit" style="color: #4a9eff; text-decoration: underline; cursor: pointer;">
+                            Configure repository in settings
+                        </a>
+                    </p>
+                `;
+                const settingsLink = document.getElementById('open-settings-from-commit');
+                if (settingsLink) {
+                    settingsLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                        document.querySelector('[data-tab="settings"]').classList.add('active');
+                        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                        document.getElementById('settings-tab').classList.add('active');
+                        loadSettings();
+                    });
+                }
+            } else {
+                commitResult.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+            }
+            return;
+        }
+        
+        commitResult.innerHTML = '<p class="success">✓ Commit successful!</p>';
+        message.value = '';
+        await loadGitStatus();
+        await loadBranches();
+    } catch (error) {
+        console.error('Error committing:', error);
+        commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
-    
-    commitResult.innerHTML = '<p class="success">✓ Commit successful!</p>';
-    document.getElementById('commit-message').value = '';
-    await loadGitStatus();
 }
 
 async function commitAndPush() {
-    const message = document.getElementById('commit-message').value.trim();
+    const message = document.getElementById('commit-message');
     const commitResult = document.getElementById('commit-result');
     
-    if (!message) {
+    if (!message || !commitResult) {
+        console.error('Commit form elements not found');
+        return;
+    }
+    
+    const commitMessage = message.value.trim();
+    
+    if (!commitMessage) {
         commitResult.innerHTML = '<p class="error">Please enter a commit message</p>';
         return;
     }
     
     commitResult.innerHTML = '<p class="loading">Committing...</p>';
     
-    const commitResult_data = await ipcRenderer.invoke('git:commit', message);
-    
-    if (commitResult_data.error) {
-        commitResult.innerHTML = `<p class="error">Error: ${commitResult_data.error}</p>`;
-        return;
+    try {
+        const commitResult_data = await ipcRenderer.invoke('git:commit', commitMessage);
+        
+        if (commitResult_data.error) {
+            if (commitResult_data.error.includes('not initialized')) {
+                commitResult.innerHTML = `
+                    <p class="error">Error: ${commitResult_data.error}</p>
+                    <p style="margin-top: 10px; font-size: 12px;">
+                        <a href="#" id="open-settings-from-commit-push" style="color: #4a9eff; text-decoration: underline; cursor: pointer;">
+                            Configure repository in settings
+                        </a>
+                    </p>
+                `;
+                const settingsLink = document.getElementById('open-settings-from-commit-push');
+                if (settingsLink) {
+                    settingsLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                        document.querySelector('[data-tab="settings"]').classList.add('active');
+                        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                        document.getElementById('settings-tab').classList.add('active');
+                        loadSettings();
+                    });
+                }
+            } else {
+                commitResult.innerHTML = `<p class="error">Error: ${commitResult_data.error}</p>`;
+            }
+            return;
+        }
+        
+        commitResult.innerHTML = '<p class="loading">Pushing...</p>';
+        
+        const pushResult = await ipcRenderer.invoke('git:push');
+        
+        if (pushResult.error) {
+            commitResult.innerHTML = `<p class="error">Commit successful but push failed: ${pushResult.error}</p>`;
+            return;
+        }
+        
+        commitResult.innerHTML = '<p class="success">✓ Commit and push successful!</p>';
+        message.value = '';
+        await loadGitStatus();
+        await loadBranches();
+    } catch (error) {
+        console.error('Error committing and pushing:', error);
+        commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
-    
-    commitResult.innerHTML = '<p class="loading">Pushing...</p>';
-    
-    const pushResult = await ipcRenderer.invoke('git:push');
-    
-    if (pushResult.error) {
-        commitResult.innerHTML = `<p class="error">Commit successful but push failed: ${pushResult.error}</p>`;
-        return;
-    }
-    
-    commitResult.innerHTML = '<p class="success">✓ Commit and push successful!</p>';
-    document.getElementById('commit-message').value = '';
-    await loadGitStatus();
 }
 
 // Event listeners for Git
-document.getElementById('refresh-git-status').addEventListener('click', loadGitStatus);
-document.getElementById('open-settings').addEventListener('click', (e) => {
-    e.preventDefault();
-    // Switch to settings tab
-    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-    document.querySelector('[data-tab="settings"]').classList.add('active');
-    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-    document.getElementById('settings-tab').classList.add('active');
-    loadSettings();
+document.getElementById('refresh-branches').addEventListener('click', async () => {
+    await loadBranches();
+    await loadGitStatus();
 });
+const openSettingsBtn = document.getElementById('open-settings');
+if (openSettingsBtn) {
+    openSettingsBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        // Switch to settings tab
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelector('[data-tab="settings"]').classList.add('active');
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        document.getElementById('settings-tab').classList.add('active');
+        loadSettings();
+    });
+}
 
 // Settings event listeners
 document.getElementById('settings-save-repo').addEventListener('click', async () => {
     const input = document.getElementById('settings-repo-path');
     const repoPath = input.value.trim();
     
-    // Use empty string if input is empty, which will default to current directory
+    // Use current directory if input is empty
     const finalPath = repoPath === '' ? process.cwd() : repoPath;
     
-    const success = await setRepository(finalPath);
-    if (success) {
-        await updateSettingsRepoStatus();
-        // Show success feedback
-        const button = document.getElementById('settings-save-repo');
-        const originalText = button.textContent;
-        button.textContent = '✓ Saved!';
-        button.style.background = '#2d5a2d';
-        setTimeout(() => {
-            button.textContent = originalText;
-            button.style.background = '';
-        }, 2000);
+    console.log('=== SETTINGS SAVE BUTTON CLICKED ===');
+    console.log('Path to save:', finalPath);
+    
+    // SAVE TO CONFIG FILE FIRST - BEFORE ANYTHING ELSE
+    try {
+        console.log('Step 1: Saving to config file...');
+        const saveResult = await ipcRenderer.invoke('config:set-git-repo-path', finalPath);
+        console.log('Save result:', saveResult);
+        
+        if (!saveResult || !saveResult.success) {
+            console.error('FAILED to save config file!');
+            alert('Failed to save repository path to config file!');
+            return;
+        }
+        
+        console.log('✓ Config file saved successfully');
+        
+        // Verify immediately
+        const verify = await ipcRenderer.invoke('config:get-git-repo-path');
+        console.log('Verification:', verify);
+        if (verify.path !== finalPath) {
+            console.error('VERIFICATION FAILED! Expected:', finalPath, 'Got:', verify.path);
+            alert('Saved but verification failed! Expected: ' + finalPath + ' Got: ' + verify.path);
+            return;
+        }
+        console.log('✓ Verification passed');
+        
+    } catch (error) {
+        console.error('ERROR saving config:', error);
+        alert('Error saving repository path: ' + error.message);
+        return;
     }
-});
-document.getElementById('view-git-logs').addEventListener('click', () => {
-    document.querySelectorAll('.git-tab-button').forEach(btn => btn.classList.remove('active'));
-    document.querySelector('[data-git-tab="logs"]').classList.add('active');
-    document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
-    document.getElementById('git-logs-tab').classList.add('active');
-    loadGitLogs();
-});
-document.getElementById('stage-all').addEventListener('click', async () => {
-    const result = await ipcRenderer.invoke('git:stage-all');
-    if (result.error) {
-        alert(`Error: ${result.error}`);
+    
+    // NOW try to initialize git with the saved path
+    console.log('Step 2: Initializing git repository...');
+    const gitSuccess = await setRepository(finalPath);
+    
+    if (gitSuccess) {
+        console.log('✓ Git repository initialized');
     } else {
-        await loadGitStatus();
+        console.warn('Git initialization failed, but path was saved');
     }
+    
+    // Update UI
+    await updateSettingsRepoStatus();
+    
+    // Show success feedback
+    const button = document.getElementById('settings-save-repo');
+    const originalText = button.textContent;
+    button.textContent = '✓ Saved!';
+    button.style.background = '#2d5a2d';
+    setTimeout(() => {
+        button.textContent = originalText;
+        button.style.background = '';
+    }, 2000);
+});
+// Git tab inner buttons
+document.querySelectorAll('.git-tab-button').forEach(button => {
+    button.addEventListener('click', () => {
+        const tabName = button.dataset.gitTab;
+        
+        document.querySelectorAll('.git-tab-button').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        
+        document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
+        document.getElementById(`git-${tabName}-tab`).classList.add('active');
+        
+        if (tabName === 'logs') {
+            // Always try to load logs, let the function handle errors gracefully
+            loadGitLogs();
+        } else if (tabName === 'status') {
+            // Reload status when switching to status tab
+            loadGitStatus();
+        } else if (tabName === 'commit') {
+            // Ensure status is loaded for commit tab
+            loadGitStatus();
+        }
+    });
 });
 document.getElementById('commit-btn').addEventListener('click', commitChanges);
 document.getElementById('commit-push-btn').addEventListener('click', commitAndPush);
 
 // Initialize on load
 loadContainers();
+
+// Auto-initialize git repository on startup
+async function initializeGit() {
+    try {
+        const saved = await ipcRenderer.invoke('config:get-git-repo-path');
+        const savedRepoPath = saved.path;
+        console.log('=== INITIALIZING GIT ===');
+        console.log('Saved path from config file:', savedRepoPath);
+        
+        if (savedRepoPath && savedRepoPath.trim() !== '' && savedRepoPath !== 'null' && savedRepoPath !== 'undefined') {
+            console.log('Found saved path, initializing:', savedRepoPath);
+            await setRepository(savedRepoPath);
+        } else {
+            console.log('No saved path found, skipping auto-init');
+        }
+    } catch (error) {
+        console.error('Error initializing git:', error);
+    }
+}
+
+// Initialize git after DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(initializeGit, 500);
+    });
+} else {
+    setTimeout(initializeGit, 500);
+}
 
 // Initialize button states (all disabled until container is selected)
 document.getElementById('start-container').disabled = true;

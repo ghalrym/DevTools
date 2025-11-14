@@ -51,16 +51,10 @@
         <div id="git-tab" class="tab-content">
             <div class="git-container">
                 <div class="git-sidebar">
-                    <h2>Repository</h2>
-                    <div id="repo-status" class="repo-status">
-                        <p>No repository selected</p>
-                        <p><a href="#" id="open-settings" style="color: #4a9eff; text-decoration: underline; cursor: pointer; font-size: 12px; margin-top: 8px; display: block;">Configure repository in settings</a></p>
-                    </div>
-                    <div class="git-actions">
-                        <h3>Actions</h3>
-                        <button id="refresh-git-status" class="btn btn-secondary">🔄 Refresh Status</button>
-                        <button id="view-git-logs" class="btn btn-secondary">📜 View Logs</button>
-                        <button id="stage-all" class="btn btn-primary">Stage All</button>
+                    <h2>Branches</h2>
+                    <button id="refresh-branches" class="btn btn-secondary" style="width: 100%; margin-bottom: 15px;">🔄 Refresh</button>
+                    <div id="branches-list" class="branches-list">
+                        <p class="placeholder">No repository selected</p>
                     </div>
                 </div>
                 <div class="git-main">
