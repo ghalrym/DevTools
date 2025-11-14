@@ -905,6 +905,13 @@ async function loadSettings() {
     if (notesDirectoryInput && notesDirResult.directory) {
         notesDirectoryInput.value = notesDirResult.directory;
     }
+    
+    // Load tab size
+    const tabSizeResult = await ipcRenderer.invoke('config:get-tab-size');
+    const tabSizeInput = document.getElementById('settings-tab-size');
+    if (tabSizeInput && tabSizeResult.tabSize) {
+        tabSizeInput.value = tabSizeResult.tabSize;
+    }
 }
 
 async function updateSettingsRepoStatus() {
@@ -2300,6 +2307,47 @@ document.getElementById('settings-save-main-branch').addEventListener('click', a
     }
 });
 
+// Save tab size
+document.getElementById('settings-save-tab-size').addEventListener('click', async () => {
+    const tabSizeValue = parseInt(document.getElementById('settings-tab-size').value);
+    
+    if (isNaN(tabSizeValue) || tabSizeValue < 1 || tabSizeValue > 8) {
+        const statusDiv = document.getElementById('settings-tab-size-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<div class="error">❌ Tab size must be between 1 and 8</div>';
+        }
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('config:set-tab-size', tabSizeValue);
+        if (result.success) {
+            tabSize = result.tabSize || tabSizeValue;
+            // Re-setup handlers with new tab size - need to clear flags first
+            const editorIds = ['notes-editor', 'diagram-code', 'commit-message', 'settings-commit-template'];
+            editorIds.forEach(id => {
+                const editor = document.getElementById(id);
+                if (editor) {
+                    editor.dataset.tabHandler = '';
+                }
+            });
+            setupTabHandling();
+            
+            const statusDiv = document.getElementById('settings-tab-size-status');
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="success">✓ Tab size saved successfully</div>';
+            }
+        } else {
+            const statusDiv = document.getElementById('settings-tab-size-status');
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="error">❌ Error saving tab size</div>';
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
 // Select notes directory
 document.getElementById('settings-select-notes-directory').addEventListener('click', async () => {
     try {
@@ -2683,6 +2731,60 @@ function setupNotesContextMenuHandler() {
 if (!setupNotesContextMenuHandler()) {
     setTimeout(() => setupNotesContextMenuHandler(), 100);
 }
+
+// Tab handling for editors
+let tabSize = 4;
+
+async function loadTabSize() {
+    try {
+        const result = await ipcRenderer.invoke('config:get-tab-size');
+        tabSize = result.tabSize || 4;
+        setupTabHandling();
+    } catch (error) {
+        tabSize = 4;
+        setupTabHandling();
+    }
+}
+
+function setupTabHandling() {
+    // Get all editor textareas
+    const editorIds = ['notes-editor', 'diagram-code', 'commit-message', 'settings-commit-template'];
+    
+    editorIds.forEach(editorId => {
+        const editor = document.getElementById(editorId);
+        if (!editor) return;
+        
+        // Remove existing handler if present (by checking for a flag)
+        if (editor.dataset.tabHandler === 'true') {
+            // We'll just overwrite it - the new handler will use the updated tabSize
+            return;
+        }
+        
+        editor.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                
+                const start = editor.selectionStart;
+                const end = editor.selectionEnd;
+                const value = editor.value;
+                
+                // Insert spaces at cursor position
+                const spaces = ' '.repeat(tabSize);
+                const newValue = value.substring(0, start) + spaces + value.substring(end);
+                
+                editor.value = newValue;
+                
+                // Set cursor position after inserted spaces
+                editor.selectionStart = editor.selectionEnd = start + tabSize;
+            }
+        });
+        
+        editor.dataset.tabHandler = 'true';
+    });
+}
+
+// Load tab size on startup
+loadTabSize();
 
 // Diagram Editor Functions
 let mermaidInitialized = false;

@@ -1228,3 +1228,15 @@ ipcMain.handle('config:set-main-branch', async (event, branchName) => {
   return { success, branch: config.mainBranch };
 });
 
+ipcMain.handle('config:get-tab-size', async () => {
+  const config = loadConfig();
+  return { tabSize: config.tabSize || 4 };
+});
+
+ipcMain.handle('config:set-tab-size', async (event, tabSize) => {
+  const config = loadConfig();
+  config.tabSize = Math.max(1, Math.min(8, parseInt(tabSize) || 4));
+  saveConfig(config);
+  return { success: true, tabSize: config.tabSize };
+});
+

@@ -300,6 +300,19 @@
                         <button id="settings-save-main-branch" class="btn btn-primary">Save Main Branch</button>
                     </div>
                 </div>
+                
+                <div class="settings-section" style="margin-top: 30px;">
+                    <h3>Editor Settings</h3>
+                    <div class="settings-item">
+                        <label for="settings-tab-size">Tab Size (spaces):</label>
+                        <input type="number" id="settings-tab-size" class="settings-input" min="1" max="8" value="4" placeholder="4">
+                        <p class="settings-hint">Number of spaces to insert when pressing Tab in editors</p>
+                        <div id="settings-tab-size-status" class="settings-status"></div>
+                    </div>
+                    <div class="settings-footer">
+                        <button id="settings-save-tab-size" class="btn btn-primary">Save Tab Size</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
