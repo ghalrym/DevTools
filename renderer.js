@@ -1233,6 +1233,76 @@ function showBranchContextMenu(e, branchName, isCurrent, branchType, remoteBranc
     }, 10);
 }
 
+function showCommitContextMenu(e, commitHash, commitElement) {
+    const contextMenu = document.getElementById('commit-context-menu');
+    if (!contextMenu) return;
+    
+    // Store commit information in the context menu
+    contextMenu.dataset.commitHash = commitHash;
+    
+    // Get commit message for display
+    const commitMessage = commitElement.querySelector('.commit-message')?.textContent || 'Unknown commit';
+    const shortHash = commitHash.substring(0, 7);
+    
+    // Position the menu at cursor
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = `${e.pageX}px`;
+    contextMenu.style.top = `${e.pageY}px`;
+    
+    // Hide menu when clicking elsewhere
+    const hideMenu = (event) => {
+        if (!contextMenu.contains(event.target)) {
+            contextMenu.style.display = 'none';
+            document.removeEventListener('click', hideMenu);
+        }
+    };
+    
+    setTimeout(() => {
+        document.addEventListener('click', hideMenu);
+    }, 10);
+}
+
+async function resetToCommit(commitHash, resetType) {
+    const typeNames = {
+        'soft': 'Soft',
+        'mixed': 'Mixed',
+        'hard': 'Hard'
+    };
+    
+    const typeDescriptions = {
+        'soft': 'Keeps changes staged',
+        'mixed': 'Keeps changes unstaged (default)',
+        'hard': 'Discards all changes (DESTRUCTIVE)'
+    };
+    
+    const confirmed = await showConfirm(
+        `Reset to Commit (${typeNames[resetType]})`,
+        `Reset HEAD to commit ${commitHash.substring(0, 7)}?\n\nType: ${typeNames[resetType]} - ${typeDescriptions[resetType]}\n\n${resetType === 'hard' ? 'WARNING: This will discard all uncommitted changes!' : 'This will move HEAD to the selected commit.'}`
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('git:reset', commitHash, resetType);
+        
+        if (result.error) {
+            await showAlert('Error', `Error resetting: ${result.error}`);
+            addGitMessage('Reset Error', result.message || result.error, 'error');
+        } else {
+            await showAlert('Success', `Reset to commit ${commitHash.substring(0, 7)} successful!`);
+            addGitMessage('Reset Success', result.message || `Reset to ${commitHash.substring(0, 7)} (${typeNames[resetType]})`, 'success');
+            await loadBranches();
+            await loadCommitFiles();
+            await loadGitLogs();
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+        addGitMessage('Reset Error', error.message, 'error');
+    }
+}
+
 async function rebaseBranch(branchName) {
     // Get current branch name
     let currentBranch = null;
@@ -1517,10 +1587,20 @@ async function loadGitLogs(branchName = null) {
         
         // Attach click listeners to commit items
         logsContent.querySelectorAll('.commit-clickable').forEach(item => {
+            // Left click to view diff
             item.addEventListener('click', async () => {
                 const commitHash = item.dataset.commitHash;
                 if (commitHash) {
                     await showCommitDiff(commitHash, item);
+                }
+            });
+            
+            // Right click for context menu
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                const commitHash = item.dataset.commitHash;
+                if (commitHash) {
+                    showCommitContextMenu(e, commitHash, item);
                 }
             });
         });
@@ -2222,8 +2302,56 @@ function setupContextMenuHandler() {
     return true;
 }
 
+// Set up commit context menu handlers
+function setupCommitContextMenuHandler() {
+    const contextMenu = document.getElementById('commit-context-menu');
+    if (!contextMenu) return false;
+    
+    // Reset Soft handler
+    const contextResetSoft = document.getElementById('context-reset-soft');
+    if (contextResetSoft) {
+        contextResetSoft.onclick = (e) => {
+            const commitHash = contextMenu.dataset.commitHash;
+            if (commitHash) {
+                resetToCommit(commitHash, 'soft');
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
+    // Reset Mixed handler
+    const contextResetMixed = document.getElementById('context-reset-mixed');
+    if (contextResetMixed) {
+        contextResetMixed.onclick = (e) => {
+            const commitHash = contextMenu.dataset.commitHash;
+            if (commitHash) {
+                resetToCommit(commitHash, 'mixed');
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
+    // Reset Hard handler
+    const contextResetHard = document.getElementById('context-reset-hard');
+    if (contextResetHard) {
+        contextResetHard.onclick = (e) => {
+            const commitHash = contextMenu.dataset.commitHash;
+            if (commitHash) {
+                resetToCommit(commitHash, 'hard');
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
+    return true;
+}
+
 if (!setupContextMenuHandler()) {
     setTimeout(() => setupContextMenuHandler(), 100);
+}
+
+if (!setupCommitContextMenuHandler()) {
+    setTimeout(() => setupCommitContextMenuHandler(), 100);
 }
 
 // Diff modal functions

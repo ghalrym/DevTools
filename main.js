@@ -489,6 +489,26 @@ ipcMain.handle('git:pull', async (event, remote = 'origin', branch = null) => {
   }
 });
 
+ipcMain.handle('git:reset', async (event, commitHash, resetType = 'mixed') => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    // Validate reset type
+    const validTypes = ['soft', 'mixed', 'hard'];
+    if (!validTypes.includes(resetType)) {
+      return { error: `Invalid reset type. Must be one of: ${validTypes.join(', ')}` };
+    }
+    
+    // Use raw to capture the output
+    const resetResult = await git.raw(['reset', `--${resetType}`, commitHash]);
+    return { success: true, message: resetResult || `Reset to ${commitHash.substring(0, 7)} (${resetType}) completed` };
+  } catch (error) {
+    return { error: error.message, message: error.message };
+  }
+});
+
 ipcMain.handle('git:get-commit-diff', async (event, commitHash) => {
   if (!git) {
     return { error: 'Git repository not initialized' };
