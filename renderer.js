@@ -1,5 +1,161 @@
 const { ipcRenderer } = require('electron');
 
+// Custom Modal Functions
+function showAlert(title, message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('alert-modal');
+        const titleEl = document.getElementById('alert-modal-title');
+        const messageEl = document.getElementById('alert-modal-message');
+        const okBtn = document.getElementById('alert-modal-ok');
+        
+        titleEl.textContent = title || 'Alert';
+        messageEl.textContent = message || '';
+        modal.style.display = 'flex';
+        
+        const handleOk = () => {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', handleOk);
+            resolve();
+        };
+        
+        okBtn.onclick = handleOk;
+        
+        // Close on overlay click
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                handleOk();
+            }
+        };
+        
+        // Close on Escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                handleOk();
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+    });
+}
+
+function showConfirm(title, message) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirm-modal');
+        const titleEl = document.getElementById('confirm-modal-title');
+        const messageEl = document.getElementById('confirm-modal-message');
+        const okBtn = document.getElementById('confirm-modal-ok');
+        const cancelBtn = document.getElementById('confirm-modal-cancel');
+        
+        titleEl.textContent = title || 'Confirm';
+        messageEl.textContent = message || '';
+        modal.style.display = 'flex';
+        
+        const handleOk = () => {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            document.removeEventListener('keydown', handleEscape);
+            resolve(true);
+        };
+        
+        const handleCancel = () => {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            document.removeEventListener('keydown', handleEscape);
+            resolve(false);
+        };
+        
+        okBtn.onclick = handleOk;
+        cancelBtn.onclick = handleCancel;
+        
+        // Close on overlay click (treat as cancel)
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                handleCancel();
+            }
+        };
+        
+        // Close on Escape key (treat as cancel)
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                handleCancel();
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+        
+        // Focus OK button
+        okBtn.focus();
+    });
+}
+
+function showPrompt(title, message, defaultValue = '') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('prompt-modal');
+        const titleEl = document.getElementById('prompt-modal-title');
+        const messageEl = document.getElementById('prompt-modal-message');
+        const inputEl = document.getElementById('prompt-modal-input');
+        const okBtn = document.getElementById('prompt-modal-ok');
+        const cancelBtn = document.getElementById('prompt-modal-cancel');
+        
+        titleEl.textContent = title || 'Input';
+        messageEl.textContent = message || '';
+        inputEl.value = defaultValue;
+        modal.style.display = 'flex';
+        inputEl.focus();
+        inputEl.select();
+        
+        const handleOk = () => {
+            const value = inputEl.value;
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            inputEl.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('keydown', handleEscape);
+            resolve(value);
+        };
+        
+        const handleCancel = () => {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            inputEl.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('keydown', handleEscape);
+            resolve(null);
+        };
+        
+        const handleKeyDown = (e) => {
+            if (e.key === 'Enter') {
+                handleOk();
+            }
+        };
+        
+        okBtn.onclick = handleOk;
+        cancelBtn.onclick = handleCancel;
+        inputEl.addEventListener('keydown', handleKeyDown);
+        
+        // Close on overlay click (treat as cancel)
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                handleCancel();
+            }
+        };
+        
+        // Close on Escape key (treat as cancel)
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                handleCancel();
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+    });
+}
+
+// Replace native functions
+window.alert = showAlert;
+window.confirm = (message) => showConfirm('Confirm', message);
+window.prompt = (message, defaultValue) => showPrompt('Input', message, defaultValue);
+
 // Tab switching
 document.querySelectorAll('.tab-button').forEach(button => {
     button.addEventListener('click', () => {
@@ -533,7 +689,7 @@ document.getElementById('refresh-containers').addEventListener('click', loadCont
 
 document.getElementById('start-container').addEventListener('click', async () => {
     if (!selectedContainerId) {
-        alert('Please select a container first');
+        await showAlert('No Container Selected', 'Please select a container first');
         return;
     }
     
@@ -545,7 +701,7 @@ document.getElementById('start-container').addEventListener('click', async () =>
     try {
         const result = await ipcRenderer.invoke('docker:start-container', selectedContainerId);
         if (result.error) {
-            alert(`Error starting container: ${result.error}`);
+            await showAlert('Error', `Error starting container: ${result.error}`);
         } else {
             // Refresh container status and reload logs
             await refreshContainerStatus();
@@ -557,7 +713,7 @@ document.getElementById('start-container').addEventListener('click', async () =>
             await loadContainerLogs(true);
         }
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        await showAlert('Error', `Error: ${error.message}`);
     } finally {
         button.disabled = false;
         button.textContent = originalText;
@@ -566,7 +722,7 @@ document.getElementById('start-container').addEventListener('click', async () =>
 
 document.getElementById('stop-container').addEventListener('click', async () => {
     if (!selectedContainerId) {
-        alert('Please select a container first');
+        await showAlert('No Container Selected', 'Please select a container first');
         return;
     }
     
@@ -578,7 +734,7 @@ document.getElementById('stop-container').addEventListener('click', async () => 
     try {
         const result = await ipcRenderer.invoke('docker:stop-container', selectedContainerId);
         if (result.error) {
-            alert(`Error stopping container: ${result.error}`);
+            await showAlert('Error', `Error stopping container: ${result.error}`);
         } else {
             // Refresh container status and reload logs
             await refreshContainerStatus();
@@ -590,7 +746,7 @@ document.getElementById('stop-container').addEventListener('click', async () => 
             await loadContainerLogs(true);
         }
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        await showAlert('Error', `Error: ${error.message}`);
     } finally {
         button.disabled = false;
         button.textContent = originalText;
@@ -599,7 +755,7 @@ document.getElementById('stop-container').addEventListener('click', async () => 
 
 document.getElementById('restart-container').addEventListener('click', async () => {
     if (!selectedContainerId) {
-        alert('Please select a container first');
+        await showAlert('No Container Selected', 'Please select a container first');
         return;
     }
     
@@ -611,7 +767,7 @@ document.getElementById('restart-container').addEventListener('click', async () 
     try {
         const result = await ipcRenderer.invoke('docker:restart-container', selectedContainerId);
         if (result.error) {
-            alert(`Error restarting container: ${result.error}`);
+            await showAlert('Error', `Error restarting container: ${result.error}`);
         } else {
             // Refresh container status and reload logs
             await refreshContainerStatus();
@@ -623,7 +779,7 @@ document.getElementById('restart-container').addEventListener('click', async () 
             await loadContainerLogs(true);
         }
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        await showAlert('Error', `Error: ${error.message}`);
     } finally {
         button.disabled = false;
         button.textContent = originalText;
@@ -932,14 +1088,15 @@ async function loadBranches() {
 }
 
 async function checkoutBranch(branchName) {
-    if (!confirm(`Switch to branch "${branchName}"?`)) {
+    const confirmed = await showConfirm('Switch Branch', `Switch to branch "${branchName}"?`);
+    if (!confirmed) {
         return;
     }
     
     const result = await ipcRenderer.invoke('git:checkout-branch', branchName);
     
     if (result.error) {
-        alert(`Error switching branch: ${result.error}`);
+        await showAlert('Error', `Error switching branch: ${result.error}`);
     } else {
         await loadBranches();
         await loadCommitFiles();
@@ -947,14 +1104,15 @@ async function checkoutBranch(branchName) {
 }
 
 async function checkoutRemoteBranch(remoteBranchName, localBranchName) {
-    if (!confirm(`Checkout and track remote branch "${localBranchName}"?`)) {
+    const confirmed = await showConfirm('Checkout Remote Branch', `Checkout and track remote branch "${localBranchName}"?`);
+    if (!confirmed) {
         return;
     }
     
     const result = await ipcRenderer.invoke('git:checkout-remote-branch', remoteBranchName, localBranchName);
     
     if (result.error) {
-        alert(`Error checking out remote branch: ${result.error}`);
+        await showAlert('Error', `Error checking out remote branch: ${result.error}`);
     } else {
         await loadBranches();
         await loadCommitFiles();
@@ -991,21 +1149,22 @@ function showBranchContextMenu(e, branchName, isCurrent) {
 }
 
 async function deleteBranch(branchName) {
-    if (!confirm(`Are you sure you want to delete branch "${branchName}"?\n\nThis action cannot be undone.`)) {
+    const confirmed = await showConfirm('Delete Branch', `Are you sure you want to delete branch "${branchName}"?\n\nThis action cannot be undone.`);
+    if (!confirmed) {
         return;
     }
     
     // Check if branch has unmerged changes
-    const force = confirm('Force delete? (Use this if the branch has unmerged changes)');
+    const force = await showConfirm('Force Delete', 'Force delete? (Use this if the branch has unmerged changes)');
     
     const result = await ipcRenderer.invoke('git:delete-branch', branchName, force);
     
     if (result.error) {
-        alert(`Error deleting branch: ${result.error}`);
+        await showAlert('Error', `Error deleting branch: ${result.error}`);
     } else {
         await loadBranches();
         await loadCommitFiles();
-        alert(`Branch "${branchName}" deleted successfully!`);
+        await showAlert('Success', `Branch "${branchName}" deleted successfully!`);
     }
 }
 
@@ -1129,7 +1288,7 @@ function attachFileActionListeners() {
             const result = await ipcRenderer.invoke('git:stage-file', filePath);
             
             if (result.error) {
-                alert(`Error: ${result.error}`);
+                await showAlert('Error', `Error: ${result.error}`);
             } else {
                 await loadCommitFiles(); // Refresh commit tab file lists
             }
@@ -1142,7 +1301,7 @@ function attachFileActionListeners() {
             const result = await ipcRenderer.invoke('git:unstage-file', filePath);
             
             if (result.error) {
-                alert(`Error: ${result.error}`);
+                await showAlert('Error', `Error: ${result.error}`);
             } else {
                 await loadCommitFiles(); // Refresh commit tab file lists
             }
@@ -1277,7 +1436,7 @@ async function loadCommitFiles() {
                             const result = await ipcRenderer.invoke('git:unstage-file', filePath);
 
                             if (result.error) {
-                                alert(`Error: ${result.error}`);
+                                await showAlert('Error', `Error: ${result.error}`);
                                 button.disabled = false;
                                 button.textContent = 'Unstage';
                             } else {
@@ -1291,7 +1450,7 @@ async function loadCommitFiles() {
                                 }
                             }
                         } catch (error) {
-                            alert(`Error: ${error.message}`);
+                            await showAlert('Error', `Error: ${error.message}`);
                             button.disabled = false;
                             button.textContent = 'Unstage';
                         }
@@ -1342,7 +1501,7 @@ async function loadCommitFiles() {
                         const result = await ipcRenderer.invoke('git:stage-file', filePath);
                         
                         if (result.error) {
-                            alert(`Error: ${result.error}`);
+                            await showAlert('Error', `Error: ${result.error}`);
                             button.disabled = false;
                             button.textContent = 'Stage';
                         } else {
@@ -1356,7 +1515,7 @@ async function loadCommitFiles() {
                             }
                         }
                     } catch (error) {
-                        alert(`Error: ${error.message}`);
+                        await showAlert('Error', `Error: ${error.message}`);
                         button.disabled = false;
                         button.textContent = 'Stage';
                     }
@@ -1507,7 +1666,7 @@ async function handleCreateBranch() {
     
     // Basic validation
     if (!/^[a-zA-Z0-9._/-]+$/.test(trimmedName)) {
-        alert('Invalid branch name. Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
+        await showAlert('Invalid Branch Name', 'Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
         return;
     }
     
@@ -1515,15 +1674,15 @@ async function handleCreateBranch() {
         const result = await ipcRenderer.invoke('git:create-branch', trimmedName);
         
         if (result.error) {
-            alert(`Error creating branch: ${result.error}`);
+            await showAlert('Error', `Error creating branch: ${result.error}`);
         } else {
             // Refresh branches and checkout the new branch
             await loadBranches();
             await loadCommitFiles();
-            alert(`Branch "${trimmedName}" created and checked out successfully!`);
+            await showAlert('Success', `Branch "${trimmedName}" created and checked out successfully!`);
         }
     } catch (error) {
-        alert(`Error: ${error.message}`);
+        await showAlert('Error', `Error: ${error.message}`);
     }
 }
 
@@ -1564,19 +1723,19 @@ document.getElementById('settings-save-repo').addEventListener('click', async ()
         const saveResult = await ipcRenderer.invoke('config:set-git-repo-path', finalPath);
         
         if (!saveResult || !saveResult.success) {
-            alert('Failed to save repository path to config file!');
+            await showAlert('Error', 'Failed to save repository path to config file!');
             return;
         }
         
         // Verify immediately
         const verify = await ipcRenderer.invoke('config:get-git-repo-path');
         if (verify.path !== finalPath) {
-            alert('Saved but verification failed! Expected: ' + finalPath + ' Got: ' + verify.path);
+            await showAlert('Error', 'Saved but verification failed! Expected: ' + finalPath + ' Got: ' + verify.path);
             return;
         }
         
     } catch (error) {
-        alert('Error saving repository path: ' + error.message);
+        await showAlert('Error', 'Error saving repository path: ' + error.message);
         return;
     }
     
@@ -1669,36 +1828,35 @@ function hideBranchNameModal() {
     }
 }
 
-function createBranchFromModal() {
+async function createBranchFromModal() {
     const input = document.getElementById('branch-name-input');
     if (!input) return;
     
     const branchName = input.value.trim();
     if (!branchName) {
-        alert('Please enter a branch name.');
+        await showAlert('Input Required', 'Please enter a branch name.');
         return;
     }
     
     if (!/^[a-zA-Z0-9._/-]+$/.test(branchName)) {
-        alert('Invalid branch name. Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
+        await showAlert('Invalid Branch Name', 'Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
         return;
     }
     
     hideBranchNameModal();
     
-    ipcRenderer.invoke('git:create-branch', branchName).then(result => {
+    try {
+        const result = await ipcRenderer.invoke('git:create-branch', branchName);
         if (result.error) {
-            alert(`Error creating branch: ${result.error}`);
+            await showAlert('Error', `Error creating branch: ${result.error}`);
         } else {
-            loadBranches().then(() => {
-                loadCommitFiles().then(() => {
-                    alert(`Branch "${branchName}" created and checked out successfully!`);
-                });
-            });
+            await loadBranches();
+            await loadCommitFiles();
+            await showAlert('Success', `Branch "${branchName}" created and checked out successfully!`);
         }
-    }).catch(error => {
-        alert(`Error: ${error.message}`);
-    });
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
 }
 
 // Set up modal event listeners
