@@ -672,6 +672,41 @@ ipcMain.handle('git:get-branches', async () => {
       type: 'local'
     }));
     
+    // Get most recent commit date for each local branch
+    const localBranchesWithDates = await Promise.all(
+      localBranches.map(async (branch) => {
+        try {
+          const log = await git.log({ from: branch.name, maxCount: 1 });
+          let lastCommitDate = 0;
+          if (log.latest && log.latest.date) {
+            lastCommitDate = log.latest.date instanceof Date 
+              ? log.latest.date.getTime() 
+              : new Date(log.latest.date).getTime();
+          }
+          return {
+            ...branch,
+            lastCommitDate: lastCommitDate
+          };
+        } catch (error) {
+          // If we can't get the date, use epoch (will sort to bottom)
+          return {
+            ...branch,
+            lastCommitDate: 0
+          };
+        }
+      })
+    );
+
+    // Sort local branches by most recent commit date (newest first)
+    // Current branch always goes first
+    localBranchesWithDates.sort((a, b) => {
+      // Current branch always goes first
+      if (a.current) return -1;
+      if (b.current) return 1;
+      // Then sort by date (newest first)
+      return b.lastCommitDate - a.lastCommitDate;
+    });
+    
     // Get remote branches
     let remoteBranches = [];
     try {
@@ -688,14 +723,46 @@ ipcMain.handle('git:get-branches', async () => {
             type: 'remote'
           };
         });
+
+      // Get most recent commit date for each remote branch
+      const remoteBranchesWithDates = await Promise.all(
+        remoteBranches.map(async (branch) => {
+          try {
+            const log = await git.log({ from: branch.fullName, maxCount: 1 });
+            let lastCommitDate = 0;
+            if (log.latest && log.latest.date) {
+              lastCommitDate = log.latest.date instanceof Date 
+                ? log.latest.date.getTime() 
+                : new Date(log.latest.date).getTime();
+            }
+            return {
+              ...branch,
+              lastCommitDate: lastCommitDate
+            };
+          } catch (error) {
+            // If we can't get the date, use epoch (will sort to bottom)
+            return {
+              ...branch,
+              lastCommitDate: 0
+            };
+          }
+        })
+      );
+
+      // Sort remote branches by most recent commit date (newest first)
+      remoteBranchesWithDates.sort((a, b) => b.lastCommitDate - a.lastCommitDate);
+      
+      return { 
+        local: localBranchesWithDates,
+        remote: remoteBranchesWithDates
+      };
     } catch (error) {
       // If remote branches can't be fetched, just continue with local branches
+      return { 
+        local: localBranchesWithDates,
+        remote: []
+      };
     }
-    
-    return { 
-      local: localBranches,
-      remote: remoteBranches
-    };
   } catch (error) {
     return { error: error.message };
   }
