@@ -1383,9 +1383,10 @@ async function loadGitLogs() {
         
         let html = '';
         result.logs.forEach(commit => {
+            const shortHash = commit.hash ? commit.hash.substring(0, 7) : 'N/A';
             html += `
-                <div class="commit-log-item">
-                    <div class="commit-hash">${commit.hash ? commit.hash.substring(0, 7) : 'N/A'}</div>
+                <div class="commit-log-item commit-clickable" data-commit-hash="${commit.hash || ''}" style="cursor: pointer;">
+                    <div class="commit-hash">${shortHash}</div>
                     <div class="commit-message">${escapeHtml(commit.message || 'No message')}</div>
                     <div class="commit-author">${commit.author_name || 'Unknown'} &lt;${commit.author_email || 'unknown'}&gt; - ${commit.date ? new Date(commit.date).toLocaleString() : 'Unknown date'}</div>
                 </div>
@@ -1393,6 +1394,16 @@ async function loadGitLogs() {
         });
         
         logsContent.innerHTML = html;
+        
+        // Attach click listeners to commit items
+        logsContent.querySelectorAll('.commit-clickable').forEach(item => {
+            item.addEventListener('click', async () => {
+                const commitHash = item.dataset.commitHash;
+                if (commitHash) {
+                    await showCommitDiff(commitHash, item);
+                }
+            });
+        });
     } catch (error) {
         logsContent.innerHTML = `<p class="error">Error loading logs: ${error.message}</p>`;
     }
@@ -2187,6 +2198,341 @@ function formatDiff(diff) {
     });
     
     return html;
+}
+
+function formatCommitDiff(diff) {
+    if (!diff || diff.trim() === '') {
+        return '<p class="placeholder">No diff content</p>';
+    }
+    
+    // Split by lines, preserving empty lines
+    const lines = diff.split(/\r?\n/);
+    const files = [];
+    let currentFile = null;
+    let currentFileLines = [];
+    
+    // Debug: Count how many "diff --git" lines we have
+    const diffGitCount = lines.filter(l => l.startsWith('diff --git')).length;
+    
+    // Parse diff to separate by file
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Check if this is the start of a new file diff
+        // Also check for variations like "diff --cc" (combined diff) or "diff --combined"
+        if (line.startsWith('diff --git') || line.startsWith('diff --cc') || line.startsWith('diff --combined')) {
+            // Save previous file if exists
+            if (currentFile !== null && currentFileLines.length > 0) {
+                files.push({
+                    header: currentFile,
+                    lines: [...currentFileLines]
+                });
+            }
+            
+            // Extract file paths from "diff --git a/path b/path"
+            // The format is: diff --git a/path b/path
+            let filePath = '';
+            const parts = line.split(/\s+/);
+            
+            // Find the part that starts with 'b/' (the new file path)
+            for (let j = 0; j < parts.length; j++) {
+                if (parts[j].startsWith('b/')) {
+                    filePath = parts[j].substring(2); // Remove 'b/' prefix
+                    // Remove quotes if present
+                    filePath = filePath.replace(/^["']|["']$/g, '');
+                    break;
+                }
+            }
+            
+            // If we didn't find b/, try to find a/ and use the next part
+            if (!filePath) {
+                for (let j = 0; j < parts.length; j++) {
+                    if (parts[j].startsWith('a/') && j + 1 < parts.length) {
+                        const nextPart = parts[j + 1];
+                        if (nextPart.startsWith('b/')) {
+                            filePath = nextPart.substring(2);
+                            filePath = filePath.replace(/^["']|["']$/g, '');
+                        } else {
+                            // Sometimes the format is different, try the next part anyway
+                            filePath = nextPart.replace(/^["']|["']$/g, '');
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // If still no path, try to extract from the last meaningful part
+            if (!filePath && parts.length >= 4) {
+                const lastPart = parts[parts.length - 1];
+                filePath = lastPart.replace(/^b\//, '').replace(/^["']|["']$/g, '');
+            }
+            
+            // Initialize new file
+            currentFile = {
+                headerLine: line,
+                filePath: filePath || 'Unknown file',
+                isNew: false,
+                isDeleted: false,
+                renameFrom: null,
+                renameTo: null,
+                oldPath: null,
+                newPath: null
+            };
+            currentFileLines = [line];
+        } else if (currentFile !== null) {
+            // All other lines belong to the current file
+            currentFileLines.push(line);
+            
+            // Check for metadata that tells us about the file
+            if (line.startsWith('new file mode')) {
+                currentFile.isNew = true;
+            } else if (line.startsWith('deleted file mode')) {
+                currentFile.isDeleted = true;
+            } else if (line.startsWith('rename from')) {
+                currentFile.renameFrom = line.replace(/^rename from\s+/, '').trim();
+            } else if (line.startsWith('rename to')) {
+                currentFile.renameTo = line.replace(/^rename to\s+/, '').trim();
+            } else if (line.startsWith('---')) {
+                // Old file path: --- a/path or --- /dev/null
+                const pathPart = line.replace(/^---\s+/, '').trim();
+                currentFile.oldPath = pathPart.replace(/^a\//, '').replace(/^\/dev\/null$/, '/dev/null');
+            } else if (line.startsWith('+++')) {
+                // New file path: +++ b/path or +++ /dev/null
+                const pathPart = line.replace(/^\+\+\+\s+/, '').trim();
+                currentFile.newPath = pathPart.replace(/^b\//, '').replace(/^\/dev\/null$/, '/dev/null');
+                // Update filePath if we have a better path now
+                if (currentFile.newPath && currentFile.newPath !== '/dev/null') {
+                    currentFile.filePath = currentFile.newPath;
+                }
+            }
+        } else {
+            // We have lines before any "diff --git" - this shouldn't happen in a proper diff
+            // But we'll handle it by creating a file for orphaned lines
+            if (files.length === 0 && currentFile === null) {
+                currentFile = {
+                    headerLine: 'diff --git',
+                    filePath: 'Changes',
+                    isNew: false,
+                    isDeleted: false,
+                    renameFrom: null,
+                    renameTo: null,
+                    oldPath: null,
+                    newPath: null
+                };
+                currentFileLines = [];
+            }
+            if (currentFile !== null) {
+                currentFileLines.push(line);
+            }
+        }
+    }
+    
+    // Don't forget the last file
+    if (currentFile !== null && currentFileLines.length > 0) {
+        files.push({
+            header: currentFile,
+            lines: currentFileLines
+        });
+    }
+    
+    // If no files were found, try to find any file indicators
+    if (files.length === 0) {
+        // Maybe the diff format is different - look for file indicators
+        // Check if we have any lines that look like file paths
+        let foundFileStart = false;
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith('---') || lines[i].startsWith('+++')) {
+                foundFileStart = true;
+                // Try to extract file path
+                const pathLine = lines[i];
+                let filePath = pathLine.replace(/^---\s+/, '').replace(/^\+\+\+\s+/, '').replace(/^[ab]\//, '').trim();
+                if (filePath && filePath !== '/dev/null') {
+                    currentFile = {
+                        headerLine: 'diff --git',
+                        filePath: filePath,
+                        isNew: false,
+                        isDeleted: false,
+                        renameFrom: null,
+                        renameTo: null,
+                        oldPath: null,
+                        newPath: null
+                    };
+                    // Collect all lines from this point
+                    currentFileLines = lines.slice(i);
+                    files.push({
+                        header: currentFile,
+                        lines: currentFileLines
+                    });
+                    break;
+                }
+            }
+        }
+        
+        // If still no files, treat entire diff as one file
+        if (files.length === 0) {
+            files.push({
+                header: {
+                    headerLine: 'diff --git',
+                    filePath: 'All Changes',
+                    isNew: false,
+                    isDeleted: false,
+                    renameFrom: null,
+                    renameTo: null,
+                    oldPath: null,
+                    newPath: null
+                },
+                lines: lines
+            });
+        }
+    }
+    
+    // Generate HTML with cards for each file
+    let html = '';
+    files.forEach((file, index) => {
+        const filePath = file.header.filePath || file.header.newPath || file.header.oldPath || 'Unknown file';
+        const isNew = file.header.isNew;
+        const isDeleted = file.header.isDeleted;
+        const isRenamed = file.header.renameFrom && file.header.renameTo;
+        const fileId = `diff-file-${index}`;
+        
+        html += `<div class="diff-file-card">`;
+        html += `<div class="diff-file-header" data-file-id="${fileId}" style="cursor: pointer;">`;
+        html += `<span class="diff-file-toggle">▼</span>`;
+        
+        if (isNew) {
+            html += `<span class="diff-file-status new">📄 New File</span>`;
+        } else if (isDeleted) {
+            html += `<span class="diff-file-status deleted">🗑️ Deleted</span>`;
+        } else if (isRenamed) {
+            html += `<span class="diff-file-status renamed">↔️ Renamed</span>`;
+        } else {
+            html += `<span class="diff-file-status modified">✏️ Modified</span>`;
+        }
+        
+        html += `<span class="diff-file-path">${escapeHtml(filePath)}</span>`;
+        
+        if (isRenamed) {
+            html += `<div class="diff-file-rename-info">`;
+            html += `<span class="diff-file-rename-from">From: ${escapeHtml(file.header.renameFrom)}</span>`;
+            html += `<span class="diff-file-rename-to">To: ${escapeHtml(file.header.renameTo)}</span>`;
+            html += `</div>`;
+        }
+        
+        html += `</div>`;
+        html += `<div class="diff-file-content" id="${fileId}-content">`;
+        
+        // Format the lines for this file
+        file.lines.forEach(line => {
+            let className = 'diff-line';
+            if (line.startsWith('+++') || line.startsWith('---')) {
+                className += ' header';
+            } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                className += ' added';
+            } else if (line.startsWith('-') && !line.startsWith('---')) {
+                className += ' removed';
+            } else if (line.startsWith('@@')) {
+                className += ' header';
+            } else if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('new file mode') || line.startsWith('deleted file mode') || line.startsWith('old mode') || line.startsWith('new mode') || line.startsWith('rename from') || line.startsWith('rename to') || line.startsWith('similarity index') || line.startsWith('copy from') || line.startsWith('copy to')) {
+                className += ' metadata';
+            } else {
+                className += ' context';
+            }
+            
+            html += `<div class="${className}">${escapeHtml(line)}</div>`;
+        });
+        
+        html += `</div>`;
+        html += `</div>`;
+    });
+    
+    return html;
+}
+
+// Set up collapse/expand handlers for file cards
+function setupDiffFileCollapse() {
+    const headers = document.querySelectorAll('.diff-file-header');
+    headers.forEach(header => {
+        // Remove existing listeners by cloning
+        const newHeader = header.cloneNode(true);
+        header.parentNode.replaceChild(newHeader, header);
+        
+        newHeader.addEventListener('click', (e) => {
+            // Don't collapse if clicking on the rename info
+            if (e.target.closest('.diff-file-rename-info')) {
+                return;
+            }
+            
+            const fileId = newHeader.dataset.fileId;
+            const content = document.getElementById(`${fileId}-content`);
+            const toggle = newHeader.querySelector('.diff-file-toggle');
+            
+            if (content && toggle) {
+                const isCollapsed = content.style.display === 'none';
+                content.style.display = isCollapsed ? 'block' : 'none';
+                toggle.textContent = isCollapsed ? '▼' : '▶';
+                toggle.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+            }
+        });
+    });
+}
+
+async function showCommitDiff(commitHash, commitElement) {
+    const modal = document.getElementById('diff-modal');
+    const title = document.getElementById('diff-modal-title');
+    const content = document.getElementById('diff-content');
+    
+    if (!modal || !title || !content) return;
+    
+    // Show modal and set title
+    modal.style.display = 'flex';
+    content.innerHTML = '<p class="loading">Loading commit diff...</p>';
+    
+    // Get commit message from the element
+    const commitMessage = commitElement.querySelector('.commit-message')?.textContent || 'Unknown commit';
+    const shortHash = commitHash.substring(0, 7);
+    title.textContent = `Commit: ${shortHash} - ${commitMessage.substring(0, 50)}${commitMessage.length > 50 ? '...' : ''}`;
+    
+    try {
+        // Get diff for the commit
+        const result = await ipcRenderer.invoke('git:get-commit-diff', commitHash);
+        
+        if (result.error) {
+            content.innerHTML = `<p class="error">Error loading commit diff: ${result.error}</p>`;
+            return;
+        }
+        
+        // Format and display the diff
+        const diff = result.diff || '';
+        
+        if (!diff || diff.trim() === '') {
+            content.innerHTML = '<p class="placeholder">No changes to display for this commit.</p>';
+            return;
+        }
+        
+        // Parse and format diff with syntax highlighting, grouped by file
+        const formattedDiff = formatCommitDiff(diff);
+        
+        // Debug: Check if we got multiple files (should contain diff-file-card)
+        if (!formattedDiff.includes('diff-file-card')) {
+            // If no cards were created, the parsing might have failed
+            // Fall back to showing the raw diff with a note
+            content.innerHTML = `
+                <p class="error" style="margin-bottom: 12px;">Warning: Could not parse diff into separate files. Showing raw diff:</p>
+                <div style="background: #1a1a1a; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 500px; overflow-y: auto;">
+                    ${escapeHtml(diff.substring(0, 5000))}${diff.length > 5000 ? '...\n\n(truncated)' : ''}
+                </div>
+            `;
+        } else {
+            content.innerHTML = formattedDiff;
+            // Set up collapse/expand handlers after content is added
+            setTimeout(() => {
+                setupDiffFileCollapse();
+            }, 10);
+        }
+        
+    } catch (error) {
+        content.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    }
 }
 
 function hideDiffModal() {

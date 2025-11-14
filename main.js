@@ -430,6 +430,46 @@ ipcMain.handle('git:force-push', async (event, remote = 'origin', branch = null)
   }
 });
 
+ipcMain.handle('git:get-commit-diff', async (event, commitHash) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    // Get the diff for a specific commit
+    // Use git show to get the full diff, then extract just the diff part
+    let diff;
+    try {
+      // First try git diff between parent and commit (works for most commits)
+      diff = await git.raw(['diff', `${commitHash}^..${commitHash}`, '--no-color']);
+    } catch (e) {
+      // If parent doesn't exist (first commit) or other error, use git show
+      try {
+        diff = await git.raw(['show', commitHash, '--no-color', '--format=']);
+        // git show includes commit message, we need just the diff part
+        // Find where the actual diff starts (after commit message)
+        const lines = diff.split('\n');
+        let diffStart = 0;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].startsWith('diff --git')) {
+            diffStart = i;
+            break;
+          }
+        }
+        // If we found the diff start, use from there, otherwise use all
+        if (diffStart > 0) {
+          diff = lines.slice(diffStart).join('\n');
+        }
+      } catch (e2) {
+        return { error: e2.message };
+      }
+    }
+    return { diff: diff || '' };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
 ipcMain.handle('git:get-diff', async (event, filePath = null, staged = false) => {
   if (!git) {
     return { error: 'Git repository not initialized' };

@@ -54,18 +54,3 @@ npm start
 4. View status, logs, or commit changes using the inner tabs
 5. Stage files individually or all at once
 6. Enter a commit message and click "Commit" or "Commit & Push"
-
-## Project Structure
-
-- `main.js` - Electron main process with IPC handlers
-- `index.html` - Application UI
-- `renderer.js` - Frontend logic and event handlers
-- `styles.css` - Application styling
-- `package.json` - Dependencies and scripts
-
-## Technologies
-
-- Electron - Desktop application framework
-- Dockerode - Docker API client
-- Simple-git - Git operations library
-

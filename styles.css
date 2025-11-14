@@ -581,6 +581,11 @@ header h1 {
     background: #2d2d2d;
     border-radius: 4px;
     border-left: 3px solid #4a9eff;
+    transition: background-color 0.2s ease;
+}
+
+.commit-clickable:hover {
+    background-color: rgba(74, 158, 255, 0.1);
 }
 
 .commit-log-item .commit-hash {
@@ -1032,6 +1037,108 @@ header h1 {
     font-weight: bold;
     margin-top: 8px;
     margin-bottom: 4px;
+}
+
+.diff-line.metadata {
+    color: #666;
+    font-size: 11px;
+    font-style: italic;
+}
+
+.diff-file-card {
+    background: #252525;
+    border: 1px solid #3d3d3d;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.diff-file-header {
+    background: #2a2a2a;
+    padding: 12px 16px;
+    border-bottom: 1px solid #3d3d3d;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    user-select: none;
+    transition: background-color 0.2s ease;
+}
+
+.diff-file-header:hover {
+    background: #2f2f2f;
+}
+
+.diff-file-toggle {
+    color: #888;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+    display: inline-block;
+    min-width: 16px;
+    text-align: center;
+}
+
+.diff-file-status {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.diff-file-status.new {
+    background: rgba(127, 255, 127, 0.2);
+    color: #7fff7f;
+    border: 1px solid rgba(127, 255, 127, 0.3);
+}
+
+.diff-file-status.deleted {
+    background: rgba(255, 127, 127, 0.2);
+    color: #ff7f7f;
+    border: 1px solid rgba(255, 127, 127, 0.3);
+}
+
+.diff-file-status.renamed {
+    background: rgba(255, 255, 127, 0.2);
+    color: #ffff7f;
+    border: 1px solid rgba(255, 255, 127, 0.3);
+}
+
+.diff-file-status.modified {
+    background: rgba(74, 158, 255, 0.2);
+    color: #4a9eff;
+    border: 1px solid rgba(74, 158, 255, 0.3);
+}
+
+.diff-file-path {
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    flex: 1;
+    word-break: break-all;
+}
+
+.diff-file-rename-info {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #3d3d3d;
+}
+
+.diff-file-rename-from,
+.diff-file-rename-to {
+    font-size: 11px;
+    color: #888;
+    font-family: 'Courier New', monospace;
+}
+
+.diff-file-content {
+    padding: 8px;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 /* Branch Groups */
