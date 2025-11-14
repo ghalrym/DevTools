@@ -1191,6 +1191,7 @@ async function commitChanges() {
         message.value = '';
         await loadBranches();
         await loadCommitFiles(); // Refresh file lists after commit
+        await loadGitLogs(); // Refresh logs to show the new commit
     } catch (error) {
         console.error('Error committing:', error);
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
@@ -1258,6 +1259,7 @@ async function commitAndPush() {
         message.value = '';
         await loadBranches();
         await loadCommitFiles(); // Refresh file lists after commit
+        await loadGitLogs(); // Refresh logs to show the new commit
     } catch (error) {
         console.error('Error committing and pushing:', error);
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;

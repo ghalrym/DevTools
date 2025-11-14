@@ -328,7 +328,16 @@ ipcMain.handle('git:get-logs', async (event, limit = 50) => {
 
   try {
     const log = await git.log({ maxCount: limit });
-    return { logs: log.all };
+    // Return only serializable data
+    const logs = log.all.map(commit => ({
+      hash: commit.hash ? String(commit.hash) : '',
+      date: commit.date ? (commit.date instanceof Date ? commit.date.toISOString() : String(commit.date)) : '',
+      message: commit.message ? String(commit.message) : '',
+      author_name: commit.author_name ? String(commit.author_name) : '',
+      author_email: commit.author_email ? String(commit.author_email) : '',
+      refs: commit.refs ? String(commit.refs) : ''
+    }));
+    return { logs };
   } catch (error) {
     return { error: error.message };
   }
