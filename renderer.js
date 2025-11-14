@@ -889,6 +889,13 @@ async function loadSettings() {
     if (diagramDirectoryInput && diagramDirResult.directory) {
         diagramDirectoryInput.value = diagramDirResult.directory;
     }
+    
+    // Load main branch
+    const mainBranchResult = await ipcRenderer.invoke('config:get-main-branch');
+    const mainBranchInput = document.getElementById('settings-main-branch');
+    if (mainBranchInput && mainBranchResult.branch) {
+        mainBranchInput.value = mainBranchResult.branch;
+    }
 }
 
 async function updateSettingsRepoStatus() {
@@ -2252,6 +2259,31 @@ document.getElementById('settings-save-diagram-directory').addEventListener('cli
         } else {
             if (statusDiv) {
                 statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error || 'Failed to save directory'}</div>`;
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
+// Save main branch
+document.getElementById('settings-save-main-branch').addEventListener('click', async () => {
+    const branchName = document.getElementById('settings-main-branch').value.trim();
+    const statusDiv = document.getElementById('settings-main-branch-status');
+    
+    try {
+        const result = await ipcRenderer.invoke('config:set-main-branch', branchName || null);
+        if (result.success) {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="success">✓ Main branch saved successfully</div>';
+            }
+            // Refresh branches if we're on the git tab
+            if (document.getElementById('git-tab') && document.getElementById('git-tab').classList.contains('active')) {
+                await loadBranches();
+            }
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error || 'Failed to save main branch'}</div>`;
             }
         }
     } catch (error) {

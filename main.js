@@ -697,10 +697,19 @@ ipcMain.handle('git:get-branches', async () => {
       })
     );
 
+    // Get main branch from config
+    const config = loadConfig();
+    const mainBranch = config.mainBranch;
+
     // Sort local branches by most recent commit date (newest first)
-    // Current branch always goes first
+    // Main branch always goes first, then current branch, then by date
     localBranchesWithDates.sort((a, b) => {
-      // Current branch always goes first
+      // Main branch always goes first (if set)
+      if (mainBranch) {
+        if (a.name === mainBranch) return -1;
+        if (b.name === mainBranch) return 1;
+      }
+      // Current branch goes second (if not main branch)
       if (a.current) return -1;
       if (b.current) return 1;
       // Then sort by date (newest first)
@@ -749,8 +758,21 @@ ipcMain.handle('git:get-branches', async () => {
         })
       );
 
+      // Get main branch from config
+      const config = loadConfig();
+      const mainBranch = config.mainBranch;
+
       // Sort remote branches by most recent commit date (newest first)
-      remoteBranchesWithDates.sort((a, b) => b.lastCommitDate - a.lastCommitDate);
+      // Main branch always goes first (if set)
+      remoteBranchesWithDates.sort((a, b) => {
+        // Main branch always goes first (if set)
+        if (mainBranch) {
+          if (a.name === mainBranch) return -1;
+          if (b.name === mainBranch) return 1;
+        }
+        // Then sort by date (newest first)
+        return b.lastCommitDate - a.lastCommitDate;
+      });
       
       return { 
         local: localBranchesWithDates,
@@ -964,5 +986,18 @@ ipcMain.handle('config:set-commit-template', async (event, template) => {
   config.commitTemplate = template;
   const success = saveConfig(config);
   return { success, template };
+});
+
+ipcMain.handle('config:get-main-branch', async () => {
+  const config = loadConfig();
+  const branch = config.mainBranch || null;
+  return { branch };
+});
+
+ipcMain.handle('config:set-main-branch', async (event, branchName) => {
+  const config = loadConfig();
+  config.mainBranch = branchName ? branchName.trim() : null;
+  const success = saveConfig(config);
+  return { success, branch: config.mainBranch };
 });
 
