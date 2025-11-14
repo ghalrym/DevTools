@@ -18,7 +18,6 @@ const getUserDataPath = () => {
     }
     return path.join(userDataDir, 'config.json');
   } catch (error) {
-    console.error('Error getting user data path:', error);
     // Fallback to current directory if app.getPath fails
     return path.join(process.cwd(), 'config.json');
   }
@@ -28,17 +27,13 @@ const getUserDataPath = () => {
 const loadConfig = () => {
   try {
     const configPath = getUserDataPath();
-    console.log('Loading config from:', configPath);
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf-8');
       const config = JSON.parse(data);
-      console.log('Loaded config:', config);
       return config;
-    } else {
-      console.log('Config file does not exist, returning empty config');
     }
   } catch (error) {
-    console.error('Error loading config:', error);
+    // Silently fail
   }
   return {};
 };
@@ -52,26 +47,18 @@ const saveConfig = (config) => {
     // Ensure directory exists
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true });
-      console.log('Created config directory:', configDir);
     }
     
     const configString = JSON.stringify(config, null, 2);
     fs.writeFileSync(configPath, configString, 'utf-8');
-    console.log('Config saved successfully to:', configPath);
-    console.log('Config content:', configString);
     
     // Verify it was written
     if (fs.existsSync(configPath)) {
-      const verifyData = fs.readFileSync(configPath, 'utf-8');
-      console.log('Verified config file exists and contains:', verifyData);
       return true;
     } else {
-      console.error('Config file was not created!');
       return false;
     }
   } catch (error) {
-    console.error('Error saving config:', error);
-    console.error('Error stack:', error.stack);
     return false;
   }
 };
@@ -82,7 +69,6 @@ function initDocker() {
     docker = new Docker();
     return true;
   } catch (error) {
-    console.error('Docker initialization error:', error);
     return false;
   }
 }
@@ -93,7 +79,6 @@ function initGit(repoPath) {
     git = simpleGit(repoPath || process.cwd());
     return true;
   } catch (error) {
-    console.error('Git initialization error:', error);
     return false;
   }
 }
@@ -110,60 +95,11 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Open DevTools automatically to see errors
-  mainWindow.webContents.openDevTools();
-
-  // Forward renderer console logs to main process console
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    const prefix = level === 0 ? 'LOG' : level === 1 ? 'WARN' : 'ERROR';
-    console.log(`[RENDERER ${prefix}] ${message}`);
-    if (sourceId) {
-      console.log(`  at ${sourceId}:${line}`);
-    }
-  });
-
-  // Also listen to console.log from renderer
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.executeJavaScript(`
-      const originalLog = console.log;
-      const originalError = console.error;
-      const originalWarn = console.warn;
-      
-      console.log = function(...args) {
-        originalLog.apply(console, args);
-        try {
-          const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-          require('electron').ipcRenderer.send('console-log', 'log', msg);
-        } catch(e) {}
-      };
-      
-      console.error = function(...args) {
-        originalError.apply(console, args);
-        try {
-          const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-          require('electron').ipcRenderer.send('console-log', 'error', msg);
-        } catch(e) {}
-      };
-      
-      console.warn = function(...args) {
-        originalWarn.apply(console, args);
-        try {
-          const msg = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-          require('electron').ipcRenderer.send('console-log', 'warn', msg);
-        } catch(e) {}
-      };
-    `);
-  });
 
   // Initialize Docker on startup
   initDocker();
 }
 
-// Listen for console logs from renderer
-ipcMain.on('console-log', (event, level, message) => {
-  const prefix = level === 'error' ? 'ERROR' : level === 'warn' ? 'WARN' : 'LOG';
-  console.log(`[RENDERER ${prefix}] ${message}`);
-});
 
 app.whenReady().then(createWindow);
 
@@ -526,31 +462,15 @@ ipcMain.handle('git:checkout-branch', async (event, branchName) => {
 
 // IPC Handlers for Settings/Config
 ipcMain.handle('config:get-git-repo-path', async () => {
-  console.log('=== GETTING GIT REPO PATH ===');
   const config = loadConfig();
-  console.log('Config loaded:', config);
   const path = config.gitRepoPath || null;
-  console.log('Returning path:', path);
   return { path };
 });
 
 ipcMain.handle('config:set-git-repo-path', async (event, repoPath) => {
-  console.log('=== SAVING GIT REPO PATH ===');
-  console.log('Received path:', repoPath);
-  
   const config = loadConfig();
-  console.log('Current config:', config);
-  
   config.gitRepoPath = repoPath;
-  console.log('Updated config:', config);
-  
   const success = saveConfig(config);
-  console.log('Save result:', success);
-  
-  // Verify it was saved
-  const verifyConfig = loadConfig();
-  console.log('Verified config after save:', verifyConfig);
-  
   return { success, path: repoPath };
 });
 

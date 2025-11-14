@@ -694,12 +694,10 @@ async function loadSettings() {
     // Load saved repository path from config file via IPC
     const saved = await ipcRenderer.invoke('config:get-git-repo-path');
     const savedRepoPath = saved.path;
-    console.log('Loading settings, saved path:', savedRepoPath);
     
     if (document.getElementById('settings-repo-path')) {
         if (savedRepoPath) {
             document.getElementById('settings-repo-path').value = savedRepoPath;
-            console.log('Set input value to:', savedRepoPath);
         } else {
             document.getElementById('settings-repo-path').value = '';
         }
@@ -955,7 +953,6 @@ async function loadGitLogs() {
     const logsContent = document.getElementById('git-logs-content');
     
     if (!logsContent) {
-        console.error('git-logs-content element not found');
         return;
     }
     
@@ -1010,7 +1007,6 @@ async function loadGitLogs() {
         
         logsContent.innerHTML = html;
     } catch (error) {
-        console.error('Error loading git logs:', error);
         logsContent.innerHTML = `<p class="error">Error loading logs: ${error.message}</p>`;
     }
 }
@@ -1074,7 +1070,6 @@ async function loadCommitFiles() {
                             await loadCommitFiles();
                         }
                     } catch (error) {
-                        console.error('Error unstaging file:', error);
                         alert(`Error: ${error.message}`);
                         button.disabled = false;
                         button.textContent = 'Unstage';
@@ -1121,7 +1116,6 @@ async function loadCommitFiles() {
                             await loadCommitFiles();
                         }
                     } catch (error) {
-                        console.error('Error staging file:', error);
                         alert(`Error: ${error.message}`);
                         button.disabled = false;
                         button.textContent = 'Stage';
@@ -1133,7 +1127,6 @@ async function loadCommitFiles() {
         }
         
     } catch (error) {
-        console.error('Error loading commit files:', error);
         stagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">Error loading files</p>';
         unstagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">Error loading files</p>';
     }
@@ -1144,7 +1137,6 @@ async function commitChanges() {
     const commitResult = document.getElementById('commit-result');
     
     if (!message || !commitResult) {
-        console.error('Commit form elements not found');
         return;
     }
     
@@ -1193,7 +1185,6 @@ async function commitChanges() {
         await loadCommitFiles(); // Refresh file lists after commit
         await loadGitLogs(); // Refresh logs to show the new commit
     } catch (error) {
-        console.error('Error committing:', error);
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
 }
@@ -1203,7 +1194,6 @@ async function commitAndPush() {
     const commitResult = document.getElementById('commit-result');
     
     if (!message || !commitResult) {
-        console.error('Commit form elements not found');
         return;
     }
     
@@ -1261,7 +1251,6 @@ async function commitAndPush() {
         await loadCommitFiles(); // Refresh file lists after commit
         await loadGitLogs(); // Refresh logs to show the new commit
     } catch (error) {
-        console.error('Error committing and pushing:', error);
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
     }
 }
@@ -1292,48 +1281,29 @@ document.getElementById('settings-save-repo').addEventListener('click', async ()
     // Use current directory if input is empty
     const finalPath = repoPath === '' ? process.cwd() : repoPath;
     
-    console.log('=== SETTINGS SAVE BUTTON CLICKED ===');
-    console.log('Path to save:', finalPath);
-    
     // SAVE TO CONFIG FILE FIRST - BEFORE ANYTHING ELSE
     try {
-        console.log('Step 1: Saving to config file...');
         const saveResult = await ipcRenderer.invoke('config:set-git-repo-path', finalPath);
-        console.log('Save result:', saveResult);
         
         if (!saveResult || !saveResult.success) {
-            console.error('FAILED to save config file!');
             alert('Failed to save repository path to config file!');
             return;
         }
         
-        console.log('✓ Config file saved successfully');
-        
         // Verify immediately
         const verify = await ipcRenderer.invoke('config:get-git-repo-path');
-        console.log('Verification:', verify);
         if (verify.path !== finalPath) {
-            console.error('VERIFICATION FAILED! Expected:', finalPath, 'Got:', verify.path);
             alert('Saved but verification failed! Expected: ' + finalPath + ' Got: ' + verify.path);
             return;
         }
-        console.log('✓ Verification passed');
         
     } catch (error) {
-        console.error('ERROR saving config:', error);
         alert('Error saving repository path: ' + error.message);
         return;
     }
     
     // NOW try to initialize git with the saved path
-    console.log('Step 2: Initializing git repository...');
-    const gitSuccess = await setRepository(finalPath);
-    
-    if (gitSuccess) {
-        console.log('✓ Git repository initialized');
-    } else {
-        console.warn('Git initialization failed, but path was saved');
-    }
+    await setRepository(finalPath);
     
     // Update UI
     await updateSettingsRepoStatus();
@@ -1357,7 +1327,10 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
         button.classList.add('active');
         
         document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
-        document.getElementById(`git-${tabName}-tab`).classList.add('active');
+        const targetTab = document.getElementById(`git-${tabName}-tab`);
+        if (targetTab) {
+            targetTab.classList.add('active');
+        }
         
         if (tabName === 'logs') {
             // Always try to load logs, let the function handle errors gracefully
@@ -1379,17 +1352,12 @@ async function initializeGit() {
     try {
         const saved = await ipcRenderer.invoke('config:get-git-repo-path');
         const savedRepoPath = saved.path;
-        console.log('=== INITIALIZING GIT ===');
-        console.log('Saved path from config file:', savedRepoPath);
         
         if (savedRepoPath && savedRepoPath.trim() !== '' && savedRepoPath !== 'null' && savedRepoPath !== 'undefined') {
-            console.log('Found saved path, initializing:', savedRepoPath);
             await setRepository(savedRepoPath);
-        } else {
-            console.log('No saved path found, skipping auto-init');
         }
     } catch (error) {
-        console.error('Error initializing git:', error);
+        // Silently fail
     }
 }
 
