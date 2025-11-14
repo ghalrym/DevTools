@@ -415,6 +415,21 @@ ipcMain.handle('git:push', async (event, remote = 'origin', branch = null) => {
   }
 });
 
+ipcMain.handle('git:force-push', async (event, remote = 'origin', branch = null) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const status = await git.status();
+    const currentBranch = branch || status.current;
+    await git.push(remote, currentBranch, ['--force']);
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
 ipcMain.handle('git:get-diff', async (event, filePath = null, staged = false) => {
   if (!git) {
     return { error: 'Git repository not initialized' };

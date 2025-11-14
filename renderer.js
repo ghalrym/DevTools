@@ -1588,6 +1588,41 @@ async function commitChanges() {
     }
 }
 
+async function forcePush() {
+    const commitResult = document.getElementById('commit-result');
+    
+    if (!commitResult) {
+        return;
+    }
+    
+    // Show warning confirmation
+    const confirmed = await showConfirm(
+        'Force Push Warning',
+        'Force push will overwrite the remote branch history. This is a destructive operation that cannot be undone.\n\nAre you sure you want to force push?'
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    commitResult.innerHTML = '<p class="loading">Force pushing...</p>';
+    
+    try {
+        const pushResult = await ipcRenderer.invoke('git:force-push');
+        
+        if (pushResult.error) {
+            commitResult.innerHTML = `<p class="error">Force push failed: ${pushResult.error}</p>`;
+        } else {
+            commitResult.innerHTML = '<p class="success">✓ Force push successful!</p>';
+            await loadBranches();
+            await loadCommitFiles();
+            await loadGitLogs();
+        }
+    } catch (error) {
+        commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    }
+}
+
 async function commitAndPush() {
     const message = document.getElementById('commit-message');
     const commitResult = document.getElementById('commit-result');
@@ -1780,6 +1815,7 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
 });
 document.getElementById('commit-btn').addEventListener('click', commitChanges);
 document.getElementById('commit-push-btn').addEventListener('click', commitAndPush);
+document.getElementById('force-push-btn').addEventListener('click', forcePush);
 
 // Create branch button - use direct event listener
 function setupCreateBranchButton() {
