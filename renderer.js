@@ -1201,6 +1201,13 @@ function showBranchContextMenu(e, branchName, isCurrent, branchType, remoteBranc
         checkoutItem.style.display = isCurrent ? 'none' : 'block';
     }
     
+    // Show/hide rebase option (hide if current branch or remote branch)
+    const rebaseItem = document.getElementById('context-rebase-branch');
+    if (rebaseItem) {
+        rebaseItem.style.display = (isCurrent || branchType === 'remote') ? 'none' : 'block';
+        rebaseItem.dataset.branchName = branchName;
+    }
+    
     // Hide delete option for current branch (only for local branches)
     const deleteItem = document.getElementById('context-delete-branch');
     if (deleteItem) {
@@ -1224,6 +1231,49 @@ function showBranchContextMenu(e, branchName, isCurrent, branchType, remoteBranc
     setTimeout(() => {
         document.addEventListener('click', hideMenu);
     }, 10);
+}
+
+async function rebaseBranch(branchName) {
+    // Get current branch name
+    let currentBranch = null;
+    try {
+        const statusResult = await ipcRenderer.invoke('git:get-status');
+        if (statusResult.status && statusResult.status.current) {
+            currentBranch = statusResult.status.current;
+        }
+    } catch (e) {
+        await showAlert('Error', 'Could not determine current branch');
+        return;
+    }
+    
+    if (!currentBranch) {
+        await showAlert('Error', 'Could not determine current branch');
+        return;
+    }
+    
+    const confirmed = await showConfirm(
+        'Rebase Branch',
+        `Rebase branch "${branchName}" onto "${currentBranch}"?\n\nThis will checkout "${branchName}" and rebase it onto "${currentBranch}".`
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('git:rebase-branch', branchName, currentBranch);
+        
+        if (result.error) {
+            await showAlert('Error', `Error rebasing branch: ${result.error}`);
+        } else {
+            await loadBranches();
+            await loadCommitFiles();
+            await loadGitLogs(branchName);
+            await showAlert('Success', `Branch "${branchName}" has been rebased onto "${currentBranch}"!`);
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
 }
 
 async function deleteBranch(branchName) {
@@ -2146,6 +2196,18 @@ function setupContextMenuHandler() {
                 } else {
                     checkoutBranch(branchName);
                 }
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
+    // Rebase handler
+    const contextRebaseBranch = document.getElementById('context-rebase-branch');
+    if (contextRebaseBranch) {
+        contextRebaseBranch.onclick = (e) => {
+            const branchName = e.target.dataset.branchName;
+            if (branchName) {
+                rebaseBranch(branchName);
                 contextMenu.style.display = 'none';
             }
         };

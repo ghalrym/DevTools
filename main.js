@@ -652,6 +652,24 @@ ipcMain.handle('git:checkout-branch', async (event, branchName) => {
   }
 });
 
+ipcMain.handle('git:rebase-branch', async (event, branchToRebase, ontoBranch) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    // First, checkout the branch we want to rebase
+    await git.checkout(branchToRebase);
+    
+    // Then rebase it onto the target branch
+    await git.rebase([ontoBranch]);
+    
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
 ipcMain.handle('git:checkout-remote-branch', async (event, remoteBranchName, localBranchName) => {
   if (!git) {
     return { error: 'Git repository not initialized' };
