@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Andrew's Hacky Dev Tool</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -15,7 +16,8 @@
         <div class="tabs">
             <button class="tab-button active" data-tab="docker">Docker Containers</button>
             <button class="tab-button" data-tab="git">Git Management</button>
-            <button class="tab-button" data-tab="settings">⚙️ Settings</button>
+            <button class="tab-button" data-tab="diagraming">Diagraming</button>
+            <button class="tab-button" data-tab="settings">Settings</button>
         </div>
 
         <!-- Docker Tab -->
@@ -120,6 +122,55 @@
             </div>
         </div>
 
+        <!-- Diagraming Tab -->
+        <div id="diagraming-tab" class="tab-content">
+            <div class="diagram-container">
+                <div class="diagram-editor-panel">
+                    <div class="diagram-header">
+                        <h2>Diagram Editor</h2>
+                        <div class="diagram-controls">
+                            <button id="clear-diagram" class="btn btn-secondary">🗑 Clear</button>
+                            <button id="load-example" class="btn btn-primary">📝 Load Example</button>
+                            <button id="save-diagram" class="btn btn-success">💾 Save</button>
+                            <button id="export-diagram" class="btn btn-success">📤 Export SVG</button>
+                        </div>
+                    </div>
+                    <textarea id="diagram-code" class="diagram-code-editor" placeholder="Enter Mermaid diagram code here...&#10;&#10;Example:&#10;graph TD&#10;    A[Start] --> B{Decision}&#10;    B -->|Yes| C[Action 1]&#10;    B -->|No| D[Action 2]&#10;    C --> E[End]&#10;    D --> E"></textarea>
+                </div>
+                <div class="diagram-preview-panel">
+                    <div class="diagram-header">
+                        <h2>Preview</h2>
+                        <div class="diagram-type-selector">
+                            <label for="diagram-type">Type:</label>
+                            <select id="diagram-type" class="diagram-type-select">
+                                <option value="graph">Flowchart</option>
+                                <option value="sequenceDiagram">Sequence</option>
+                                <option value="classDiagram">Class</option>
+                                <option value="stateDiagram">State</option>
+                                <option value="erDiagram">ER Diagram</option>
+                                <option value="gantt">Gantt</option>
+                                <option value="pie">Pie Chart</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="diagram-preview" class="diagram-preview">
+                        <p class="placeholder">Enter diagram code to see preview</p>
+                    </div>
+                </div>
+            </div>
+            <div class="diagram-saved-panel">
+                <div class="diagram-saved-header">
+                    <h3>Saved Diagrams</h3>
+                    <div class="diagram-saved-controls">
+                        <button id="refresh-diagrams" class="btn btn-secondary">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div id="saved-diagrams-list" class="saved-diagrams-list">
+                    <p class="placeholder">Configure diagram directory in Settings</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Settings Tab -->
         <div id="settings-tab" class="tab-content">
             <div class="settings-container">
@@ -150,6 +201,22 @@
                         <button id="settings-save-template" class="btn btn-primary">Save Template</button>
                     </div>
                 </div>
+                
+                <div class="settings-section" style="margin-top: 30px;">
+                    <h3>Diagram Directory</h3>
+                    <div class="settings-item">
+                        <label for="settings-diagram-directory">Directory Path:</label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="settings-diagram-directory" class="settings-input" placeholder="Select directory for saving diagrams..." readonly style="flex: 1;">
+                            <button id="settings-select-diagram-directory" class="btn btn-secondary">📁 Select Directory</button>
+                        </div>
+                        <p class="settings-hint">Directory where diagram files (.mmd) will be saved and loaded from</p>
+                        <div id="settings-diagram-status" class="settings-status"></div>
+                    </div>
+                    <div class="settings-footer">
+                        <button id="settings-save-diagram-directory" class="btn btn-primary">Save Diagram Directory</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -169,6 +236,7 @@
     <!-- Context Menu for Branches -->
     <div id="branch-context-menu" class="context-menu" style="display: none;">
         <div class="context-menu-item" id="context-checkout-branch">✓ Checkout Branch</div>
+        <div class="context-menu-item" id="context-update-branch">⬇️ Update from Remote</div>
         <div class="context-menu-item" id="context-rebase-branch">🔄 Rebase onto Current</div>
         <div class="context-menu-item" id="context-delete-branch">🗑️ Delete Branch</div>
     </div>

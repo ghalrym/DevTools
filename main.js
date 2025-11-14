@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const Docker = require('dockerode');
@@ -709,6 +709,106 @@ ipcMain.handle('git:checkout-branch', async (event, branchName) => {
   try {
     await git.checkout(branchName);
     return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+// Diagram management IPC handlers
+ipcMain.handle('diagram:get-directory', async () => {
+  const config = loadConfig();
+  return { directory: config.diagramDirectory || null };
+});
+
+ipcMain.handle('diagram:set-directory', async (event, directory) => {
+  try {
+    const config = loadConfig();
+    config.diagramDirectory = directory;
+    if (saveConfig(config)) {
+      return { success: true };
+    }
+    return { error: 'Failed to save directory path' };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('diagram:select-directory', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: 'Select Directory for Diagrams'
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+      return { directory: result.filePaths[0] };
+    }
+    return { directory: null };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('diagram:list-files', async (event, directory) => {
+  try {
+    if (!directory || !fs.existsSync(directory)) {
+      return { files: [] };
+    }
+    
+    const files = fs.readdirSync(directory)
+      .filter(file => file.endsWith('.mmd') || file.endsWith('.mermaid'))
+      .map(file => {
+        const filePath = path.join(directory, file);
+        const stats = fs.statSync(filePath);
+        return {
+          name: file,
+          path: filePath,
+          modified: stats.mtime.toISOString(),
+          size: stats.size
+        };
+      })
+      .sort((a, b) => new Date(b.modified) - new Date(a.modified)); // Sort by modified date, newest first
+    
+    return { files };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('diagram:load-file', async (event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { error: 'File not found' };
+    }
+    
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return { content };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('diagram:save-file', async (event, filePath, content) => {
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('diagram:delete-file', async (event, filePath) => {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return { success: true };
+    }
+    return { error: 'File not found' };
   } catch (error) {
     return { error: error.message };
   }

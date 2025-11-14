@@ -632,7 +632,232 @@ header h1 {
 .git-message-time {
     font-size: 10px;
     color: #888;
+}
+
+/* Diagram Editor Styles */
+.diagram-container {
+    display: flex;
+    height: calc(100vh - 320px);
+    gap: 0;
+}
+
+.diagram-editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #3d3d3d;
+    background: #1a1a1a;
+}
+
+.diagram-preview-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+}
+
+.diagram-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #252525;
+    border-bottom: 1px solid #3d3d3d;
+}
+
+.diagram-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.diagram-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.diagram-type-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.diagram-type-selector label {
+    font-size: 12px;
+    color: #a0a0a0;
+}
+
+.diagram-type-select {
+    padding: 4px 8px;
+    background: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.diagram-type-select:hover {
+    background: #333;
+}
+
+.diagram-type-select:focus {
+    outline: none;
+    border-color: #4a9eff;
+}
+
+.diagram-code-editor {
+    flex: 1;
+    padding: 16px;
+    background: #1a1a1a;
+    border: none;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+    overflow-y: auto;
+}
+
+.diagram-code-editor::placeholder {
+    color: #666;
+}
+
+.diagram-code-editor:focus {
+    background: #1e1e1e;
+}
+
+.diagram-preview {
+    flex: 1;
+    padding: 20px;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1e1e1e;
+}
+
+.diagram-preview .mermaid {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.diagram-preview svg {
+    max-width: 100%;
+    height: auto;
+}
+
+.diagram-preview .error {
+    color: #ff7f7f;
+    padding: 16px;
+    background: rgba(255, 127, 127, 0.1);
+    border: 1px solid #ff7f7f;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
     font-weight: normal;
+}
+
+/* Saved Diagrams Panel */
+.diagram-saved-panel {
+    height: 200px;
+    border-top: 1px solid #3d3d3d;
+    background: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+}
+
+.diagram-saved-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background: #252525;
+    border-bottom: 1px solid #3d3d3d;
+}
+
+.diagram-saved-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.diagram-saved-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.diagram-directory-input {
+    padding: 4px 8px;
+    background: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+    width: 300px;
+    cursor: default;
+}
+
+.diagram-directory-input:focus {
+    outline: none;
+    border-color: #4a9eff;
+}
+
+.saved-diagrams-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+}
+
+.saved-diagrams-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+}
+
+.saved-diagram-item {
+    background: #252525;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 12px;
+    transition: background-color 0.2s ease;
+}
+
+.saved-diagram-item:hover {
+    background: #2a2a2a;
+}
+
+.saved-diagram-name {
+    font-weight: 600;
+    color: #e0e0e0;
+    margin-bottom: 8px;
+    font-size: 14px;
+    word-break: break-word;
+}
+
+.saved-diagram-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 8px;
+}
+
+.saved-diagram-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-small {
+    padding: 4px 12px;
+    font-size: 11px;
 }
 
 .git-message-content {

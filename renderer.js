@@ -1,4 +1,5 @@
 const { ipcRenderer } = require('electron');
+const path = require('path');
 
 // Custom Modal Functions
 function showAlert(title, message) {
@@ -192,6 +193,8 @@ document.querySelectorAll('.tab-button').forEach(button => {
             }
             // Re-setup the create branch button in case it was recreated
             setupCreateBranchButton();
+        } else if (tabName === 'diagraming') {
+            initializeDiagramEditor();
         } else if (tabName === 'settings') {
             loadSettings();
         }
@@ -879,6 +882,13 @@ async function loadSettings() {
     
     // Update status
     await updateSettingsRepoStatus();
+    
+    // Load diagram directory
+    const diagramDirResult = await ipcRenderer.invoke('diagram:get-directory');
+    const diagramDirectoryInput = document.getElementById('settings-diagram-directory');
+    if (diagramDirectoryInput && diagramDirResult.directory) {
+        diagramDirectoryInput.value = diagramDirResult.directory;
+    }
 }
 
 async function updateSettingsRepoStatus() {
@@ -1201,6 +1211,13 @@ function showBranchContextMenu(e, branchName, isCurrent, branchType, remoteBranc
         checkoutItem.style.display = isCurrent ? 'none' : 'block';
     }
     
+    // Show/hide update option (only for local branches, not remote)
+    const updateItem = document.getElementById('context-update-branch');
+    if (updateItem) {
+        updateItem.style.display = (branchType === 'remote') ? 'none' : 'block';
+        updateItem.dataset.branchName = branchName;
+    }
+    
     // Show/hide rebase option (hide if current branch or remote branch)
     const rebaseItem = document.getElementById('context-rebase-branch');
     if (rebaseItem) {
@@ -1300,6 +1317,60 @@ async function resetToCommit(commitHash, resetType) {
     } catch (error) {
         await showAlert('Error', `Error: ${error.message}`);
         addGitMessage('Reset Error', error.message, 'error');
+    }
+}
+
+async function updateBranch(branchName) {
+    if (!branchName) {
+        await showAlert('Error', 'No branch specified');
+        return;
+    }
+    
+    try {
+        // Get current branch to check if we need to checkout first
+        const statusResult = await ipcRenderer.invoke('git:get-status');
+        let currentBranch = null;
+        if (statusResult.status && statusResult.status.current) {
+            currentBranch = statusResult.status.current;
+        }
+        
+        // If not on the target branch, checkout first
+        if (currentBranch !== branchName) {
+            const confirmed = await showConfirm(
+                'Checkout Branch',
+                `You need to checkout "${branchName}" first to update it. Checkout now?`
+            );
+            
+            if (!confirmed) {
+                return;
+            }
+            
+            // Checkout the branch
+            const checkoutResult = await ipcRenderer.invoke('git:checkout-branch', branchName);
+            if (checkoutResult.error) {
+                await showAlert('Error', `Error checking out branch: ${checkoutResult.error}`);
+                addGitMessage('Update Error', `Failed to checkout ${branchName}: ${checkoutResult.error}`, 'error');
+                return;
+            }
+        }
+        
+        // Now pull from remote (default to origin)
+        const pullResult = await ipcRenderer.invoke('git:pull', 'origin', branchName);
+        
+        if (pullResult.error) {
+            await showAlert('Error', `Error updating branch: ${pullResult.error}`);
+            addGitMessage('Update Error', pullResult.message || pullResult.error, 'error');
+        } else {
+            await showAlert('Success', `Branch "${branchName}" updated successfully!`);
+            addGitMessage('Update Success', pullResult.message || `Updated ${branchName} from remote`, 'success');
+            // Refresh branches and logs
+            await loadBranches();
+            await loadCommitFiles();
+            await loadGitLogs(branchName);
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+        addGitMessage('Update Error', error.message, 'error');
     }
 }
 
@@ -2139,6 +2210,55 @@ document.getElementById('settings-save-template').addEventListener('click', asyn
     }
 });
 
+// Select diagram directory
+document.getElementById('settings-select-diagram-directory').addEventListener('click', async () => {
+    try {
+        const result = await ipcRenderer.invoke('diagram:select-directory');
+        if (result.error) {
+            await showAlert('Error', `Error selecting directory: ${result.error}`);
+        } else if (result.directory) {
+            const diagramDirectoryInput = document.getElementById('settings-diagram-directory');
+            if (diagramDirectoryInput) {
+                diagramDirectoryInput.value = result.directory;
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
+// Save diagram directory
+document.getElementById('settings-save-diagram-directory').addEventListener('click', async () => {
+    const directory = document.getElementById('settings-diagram-directory').value;
+    if (!directory) {
+        const statusDiv = document.getElementById('settings-diagram-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<div class="error">❌ Please select a directory first</div>';
+        }
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('diagram:set-directory', directory);
+        const statusDiv = document.getElementById('settings-diagram-status');
+        if (result.success) {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="success">✓ Diagram directory saved successfully</div>';
+            }
+            // Refresh diagrams if we're on the diagraming tab
+            if (document.getElementById('diagraming-tab') && document.getElementById('diagraming-tab').classList.contains('active')) {
+                await loadSavedDiagrams();
+            }
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error || 'Failed to save directory'}</div>`;
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
 // Git tab inner buttons
 document.querySelectorAll('.git-tab-button').forEach(button => {
     button.addEventListener('click', () => {
@@ -2328,6 +2448,18 @@ function setupContextMenuHandler() {
         };
     }
     
+    // Update handler
+    const contextUpdateBranch = document.getElementById('context-update-branch');
+    if (contextUpdateBranch) {
+        contextUpdateBranch.onclick = (e) => {
+            const branchName = contextMenu.dataset.branchName;
+            if (branchName) {
+                updateBranch(branchName);
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
     // Rebase handler
     const contextRebaseBranch = document.getElementById('context-rebase-branch');
     if (contextRebaseBranch) {
@@ -2405,6 +2537,355 @@ if (!setupContextMenuHandler()) {
 
 if (!setupCommitContextMenuHandler()) {
     setTimeout(() => setupCommitContextMenuHandler(), 100);
+}
+
+// Diagram Editor Functions
+let mermaidInitialized = false;
+
+function initializeMermaid() {
+    if (mermaidInitialized || typeof mermaid === 'undefined') {
+        return;
+    }
+    
+    try {
+        mermaid.initialize({ 
+            startOnLoad: false,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#4a9eff',
+                primaryTextColor: '#e0e0e0',
+                primaryBorderColor: '#3d3d3d',
+                lineColor: '#4a9eff',
+                secondaryColor: '#2d2d2d',
+                tertiaryColor: '#1e1e1e'
+            }
+        });
+        mermaidInitialized = true;
+    } catch (error) {
+        // Mermaid not loaded yet
+    }
+}
+
+function initializeDiagramEditor() {
+    initializeMermaid();
+    
+    const diagramCode = document.getElementById('diagram-code');
+    const diagramPreview = document.getElementById('diagram-preview');
+    const clearBtn = document.getElementById('clear-diagram');
+    const loadExampleBtn = document.getElementById('load-example');
+    const saveBtn = document.getElementById('save-diagram');
+    const exportBtn = document.getElementById('export-diagram');
+    const diagramType = document.getElementById('diagram-type');
+    const refreshDiagramsBtn = document.getElementById('refresh-diagrams');
+    
+    if (!diagramCode || !diagramPreview) return;
+    
+    // Load saved directory on init
+    loadDiagramDirectory();
+    
+    // Render diagram on input
+    let renderTimeout;
+    diagramCode.addEventListener('input', () => {
+        clearTimeout(renderTimeout);
+        renderTimeout = setTimeout(() => {
+            renderDiagram();
+        }, 500); // Debounce rendering
+    });
+    
+    // Clear button
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            diagramCode.value = '';
+            diagramPreview.innerHTML = '<p class="placeholder">Enter diagram code to see preview</p>';
+        });
+    }
+    
+    // Load example button
+    if (loadExampleBtn) {
+        loadExampleBtn.addEventListener('click', () => {
+            const examples = {
+                'graph': `graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Action 1]
+    B -->|No| D[Action 2]
+    C --> E[End]
+    D --> E`,
+                'sequenceDiagram': `sequenceDiagram
+    participant A as User
+    participant B as System
+    A->>B: Request
+    B->>B: Process
+    B-->>A: Response`,
+                'classDiagram': `classDiagram
+    class Animal {
+        +String name
+        +int age
+        +eat()
+    }
+    class Dog {
+        +bark()
+    }
+    Animal <|-- Dog`,
+                'stateDiagram': `stateDiagram-v2
+    [*] --> State1
+    State1 --> State2
+    State2 --> [*]`,
+                'erDiagram': `erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    ORDER ||--|{ LINE-ITEM : contains
+    CUSTOMER }|..|{ DELIVERY-ADDRESS : uses`,
+                'gantt': `gantt
+    title Project Timeline
+    dateFormat YYYY-MM-DD
+    section Phase 1
+    Task 1 :a1, 2024-01-01, 30d
+    Task 2 :a2, after a1, 20d
+    section Phase 2
+    Task 3 :a3, after a2, 30d`,
+                'pie': `pie title Distribution
+    "Category A" : 42.1
+    "Category B" : 30.2
+    "Category C" : 27.7`
+            };
+            
+            const selectedType = diagramType ? diagramType.value : 'graph';
+            diagramCode.value = examples[selectedType] || examples['graph'];
+            renderDiagram();
+        });
+    }
+    
+    // Save button
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            const code = diagramCode.value.trim();
+            if (!code) {
+                await showAlert('Save Error', 'No diagram code to save.');
+                return;
+            }
+            
+            await saveDiagram(code);
+        });
+    }
+    
+    // Export button
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            const svg = diagramPreview.querySelector('svg');
+            if (svg) {
+                const svgData = new XMLSerializer().serializeToString(svg);
+                const blob = new Blob([svgData], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'diagram.svg';
+                link.click();
+                URL.revokeObjectURL(url);
+            } else {
+                showAlert('Export Error', 'No diagram to export. Please create a diagram first.');
+            }
+        });
+    }
+    
+    // Refresh diagrams button
+    if (refreshDiagramsBtn) {
+        refreshDiagramsBtn.addEventListener('click', async () => {
+            await loadSavedDiagrams();
+        });
+    }
+    
+    // Initial render if there's content
+    if (diagramCode.value.trim()) {
+        renderDiagram();
+    }
+}
+
+async function loadDiagramDirectory() {
+    const result = await ipcRenderer.invoke('diagram:get-directory');
+    if (result.directory) {
+        const diagramDirectory = document.getElementById('diagram-directory');
+        if (diagramDirectory) {
+            diagramDirectory.value = result.directory;
+            await loadSavedDiagrams();
+        }
+    }
+}
+
+async function loadSavedDiagrams() {
+    const savedDiagramsList = document.getElementById('saved-diagrams-list');
+    
+    if (!savedDiagramsList) return;
+    
+    const dirResult = await ipcRenderer.invoke('diagram:get-directory');
+    const directory = dirResult.directory;
+    
+    if (!directory) {
+        savedDiagramsList.innerHTML = '<p class="placeholder">Configure diagram directory in Settings</p>';
+        return;
+    }
+    
+    const result = await ipcRenderer.invoke('diagram:list-files', directory);
+    
+    if (result.error) {
+        savedDiagramsList.innerHTML = `<p class="error">Error loading diagrams: ${result.error}</p>`;
+        return;
+    }
+    
+    const files = result.files || [];
+    
+    if (files.length === 0) {
+        savedDiagramsList.innerHTML = '<p class="placeholder">No saved diagrams found in this directory</p>';
+        return;
+    }
+    
+    let html = '<div class="saved-diagrams-grid">';
+    files.forEach(file => {
+        const fileName = file.name.replace(/\.(mmd|mermaid)$/, '');
+        const modifiedDate = new Date(file.modified).toLocaleString();
+        html += `
+            <div class="saved-diagram-item" data-file-path="${escapeHtml(file.path)}">
+                <div class="saved-diagram-name">${escapeHtml(fileName)}</div>
+                <div class="saved-diagram-meta">
+                    <span class="saved-diagram-date">${modifiedDate}</span>
+                    <span class="saved-diagram-size">${formatFileSize(file.size)}</span>
+                </div>
+                <div class="saved-diagram-actions">
+                    <button class="btn btn-small btn-primary load-diagram-btn" data-file-path="${escapeHtml(file.path)}">Load</button>
+                    <button class="btn btn-small btn-danger delete-diagram-btn" data-file-path="${escapeHtml(file.path)}">Delete</button>
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    savedDiagramsList.innerHTML = html;
+    
+    // Attach event listeners
+    savedDiagramsList.querySelectorAll('.load-diagram-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filePath = e.target.dataset.filePath;
+            await loadDiagramFromFile(filePath);
+        });
+    });
+    
+    savedDiagramsList.querySelectorAll('.delete-diagram-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filePath = e.target.dataset.filePath;
+            const fileName = path.basename(filePath);
+            const confirmed = await showConfirm('Delete Diagram', `Are you sure you want to delete "${fileName}"?`);
+            if (confirmed) {
+                const result = await ipcRenderer.invoke('diagram:delete-file', filePath);
+                if (result.error) {
+                    await showAlert('Error', `Error deleting file: ${result.error}`);
+                } else {
+                    await loadSavedDiagrams();
+                }
+            }
+        });
+    });
+}
+
+async function loadDiagramFromFile(filePath) {
+    const result = await ipcRenderer.invoke('diagram:load-file', filePath);
+    if (result.error) {
+        await showAlert('Error', `Error loading diagram: ${result.error}`);
+    } else {
+        const diagramCode = document.getElementById('diagram-code');
+        if (diagramCode) {
+            diagramCode.value = result.content;
+            renderDiagram();
+        }
+    }
+}
+
+async function saveDiagram(code) {
+    const dirResult = await ipcRenderer.invoke('diagram:get-directory');
+    const directory = dirResult.directory;
+    
+    if (!directory) {
+        await showAlert('Save Error', 'Please configure a diagram directory in Settings first.');
+        return;
+    }
+    
+    const fileName = await showPrompt('Save Diagram', 'Enter a name for this diagram:', 'diagram');
+    if (!fileName) {
+        return;
+    }
+    
+    const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = path.join(directory, `${sanitizedFileName}.mmd`);
+    
+    const result = await ipcRenderer.invoke('diagram:save-file', filePath, code);
+    if (result.error) {
+        await showAlert('Error', `Error saving diagram: ${result.error}`);
+    } else {
+        await showAlert('Success', 'Diagram saved successfully!');
+        await loadSavedDiagrams();
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function renderDiagram() {
+    const diagramCode = document.getElementById('diagram-code');
+    const diagramPreview = document.getElementById('diagram-preview');
+    
+    if (!diagramCode || !diagramPreview) return;
+    
+    const code = diagramCode.value.trim();
+    
+    if (!code) {
+        diagramPreview.innerHTML = '<p class="placeholder">Enter diagram code to see preview</p>';
+        return;
+    }
+    
+    if (typeof mermaid === 'undefined') {
+        diagramPreview.innerHTML = '<p class="error">Mermaid library not loaded. Please refresh the page.</p>';
+        return;
+    }
+    
+    // Clear previous content
+    diagramPreview.innerHTML = '';
+    
+    // Generate unique ID for this diagram
+    const diagramId = 'diagram-' + Date.now();
+    
+    // Create a div for the diagram with the code as textContent
+    const diagramDiv = document.createElement('div');
+    diagramDiv.id = diagramId;
+    diagramDiv.className = 'mermaid';
+    diagramDiv.textContent = code;
+    diagramPreview.appendChild(diagramDiv);
+    
+    // Render the diagram using mermaid.run() or mermaid.render()
+    try {
+        // Try using mermaid.run() first (for newer versions)
+        if (typeof mermaid.run === 'function') {
+            mermaid.run({
+                nodes: [diagramDiv]
+            }).catch((error) => {
+                diagramPreview.innerHTML = `<p class="error">Error rendering diagram: ${error.message}</p>`;
+            });
+        } else {
+            // Fallback to mermaid.render()
+            mermaid.render(diagramId, code).then((result) => {
+                diagramDiv.innerHTML = result.svg;
+            }).catch((error) => {
+                diagramPreview.innerHTML = `<p class="error">Error rendering diagram: ${error.message}</p>`;
+            });
+        }
+    } catch (error) {
+        diagramPreview.innerHTML = `<p class="error">Error rendering diagram: ${error.message}</p>`;
+    }
 }
 
 // Diff modal functions
