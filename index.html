@@ -75,6 +75,7 @@
                             <div class="commit-actions">
                                 <button id="commit-btn" class="btn btn-primary">Commit</button>
                                 <button id="commit-push-btn" class="btn btn-success">Commit & Push</button>
+                                <button id="pull-btn" class="btn btn-secondary">Pull</button>
                                 <button id="force-push-btn" class="btn btn-danger">Force Push</button>
                             </div>
                         </div>
@@ -97,6 +98,15 @@
                             </div>
                         </div>
                         <div id="commit-result" class="commit-result"></div>
+                        <div class="git-messages-section" style="margin-top: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <h3 style="margin: 0; color: #e0e0e0;">Git Messages</h3>
+                                <button id="clear-git-messages" class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;">Clear</button>
+                            </div>
+                            <div id="git-messages" class="git-messages-container">
+                                <p class="placeholder" style="font-size: 12px; opacity: 0.7;">No messages yet</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Git Logs Tab -->

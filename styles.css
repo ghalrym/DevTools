@@ -568,6 +568,82 @@ header h1 {
     gap: 10px;
 }
 
+.git-messages-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #3d3d3d;
+}
+
+.git-messages-container {
+    background: #1a1a1a;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+
+.git-message {
+    margin-bottom: 8px;
+    padding: 8px;
+    border-radius: 4px;
+    border-left: 3px solid #666;
+    background: #252525;
+}
+
+.git-message:last-child {
+    margin-bottom: 0;
+}
+
+.git-message-error {
+    border-left-color: #ff7f7f;
+    background: rgba(255, 127, 127, 0.1);
+}
+
+.git-message-success {
+    border-left-color: #7fff7f;
+    background: rgba(127, 255, 127, 0.1);
+}
+
+.git-message-info {
+    border-left-color: #4a9eff;
+    background: rgba(74, 158, 255, 0.1);
+}
+
+.git-message-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+.git-message-icon {
+    font-size: 12px;
+}
+
+.git-message-title {
+    flex: 1;
+    color: #e0e0e0;
+}
+
+.git-message-time {
+    font-size: 10px;
+    color: #888;
+    font-weight: normal;
+}
+
+.git-message-content {
+    color: #ccc;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 10px;
+    line-height: 1.4;
+    margin-top: 4px;
+}
+
 .commit-result {
     padding: 15px;
     background: #252525;

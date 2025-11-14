@@ -1776,6 +1776,34 @@ async function commitChanges() {
     }
 }
 
+async function pullChanges() {
+    const commitResult = document.getElementById('commit-result');
+    
+    if (!commitResult) {
+        return;
+    }
+    
+    commitResult.innerHTML = '<p class="loading">Pulling...</p>';
+    
+    try {
+        const pullResult = await ipcRenderer.invoke('git:pull');
+        
+        if (pullResult.error) {
+            commitResult.innerHTML = `<p class="error">Pull failed: ${pullResult.error}</p>`;
+            addGitMessage('Pull Error', pullResult.message || pullResult.error, 'error');
+        } else {
+            commitResult.innerHTML = '<p class="success">✓ Pull successful!</p>';
+            addGitMessage('Pull Success', pullResult.message || 'Pull completed successfully', 'success');
+            await loadBranches();
+            await loadCommitFiles();
+            await loadGitLogs();
+        }
+    } catch (error) {
+        commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+        addGitMessage('Pull Error', error.message, 'error');
+    }
+}
+
 async function forcePush() {
     const commitResult = document.getElementById('commit-result');
     
@@ -1800,14 +1828,17 @@ async function forcePush() {
         
         if (pushResult.error) {
             commitResult.innerHTML = `<p class="error">Force push failed: ${pushResult.error}</p>`;
+            addGitMessage('Force Push Error', pushResult.message || pushResult.error, 'error');
         } else {
             commitResult.innerHTML = '<p class="success">✓ Force push successful!</p>';
+            addGitMessage('Force Push Success', pushResult.message || 'Force push completed successfully', 'success');
             await loadBranches();
             await loadCommitFiles();
             await loadGitLogs();
         }
     } catch (error) {
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+        addGitMessage('Force Push Error', error.message, 'error');
     }
 }
 
@@ -1864,10 +1895,12 @@ async function commitAndPush() {
         
         if (pushResult.error) {
             commitResult.innerHTML = `<p class="error">Commit successful but push failed: ${pushResult.error}</p>`;
+            addGitMessage('Push Error', pushResult.message || pushResult.error, 'error');
             return;
         }
         
         commitResult.innerHTML = '<p class="success">✓ Commit and push successful!</p>';
+        addGitMessage('Push Success', pushResult.message || 'Push completed successfully', 'success');
         message.value = '';
         await loadBranches();
         await loadCommitFiles(); // Refresh file lists after commit
@@ -2040,6 +2073,7 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
 });
 document.getElementById('commit-btn').addEventListener('click', commitChanges);
 document.getElementById('commit-push-btn').addEventListener('click', commitAndPush);
+document.getElementById('pull-btn').addEventListener('click', pullChanges);
 document.getElementById('force-push-btn').addEventListener('click', forcePush);
 
 // Refresh commit files button
@@ -2694,6 +2728,55 @@ function setupDiffModal() {
 
 setupDiffModal();
 
+// Git messages functions
+function addGitMessage(title, message, type = 'info') {
+    const messagesContainer = document.getElementById('git-messages');
+    if (!messagesContainer) return;
+    
+    // Remove placeholder if it exists
+    const placeholder = messagesContainer.querySelector('.placeholder');
+    if (placeholder) {
+        placeholder.remove();
+    }
+    
+    const timestamp = new Date().toLocaleTimeString();
+    const typeClass = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+    const typeIcon = type === 'error' ? '❌' : type === 'success' ? '✓' : 'ℹ️';
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `git-message git-message-${typeClass}`;
+    messageDiv.innerHTML = `
+        <div class="git-message-header">
+            <span class="git-message-icon">${typeIcon}</span>
+            <span class="git-message-title">${escapeHtml(title)}</span>
+            <span class="git-message-time">${timestamp}</span>
+        </div>
+        <div class="git-message-content">${escapeHtml(message)}</div>
+    `;
+    
+    messagesContainer.insertBefore(messageDiv, messagesContainer.firstChild);
+    
+    // Limit to 50 messages
+    const messages = messagesContainer.querySelectorAll('.git-message');
+    if (messages.length > 50) {
+        messages[messages.length - 1].remove();
+    }
+    
+    // Auto-scroll to top to show latest message
+    messagesContainer.scrollTop = 0;
+}
+
+// Clear git messages button
+const clearGitMessagesBtn = document.getElementById('clear-git-messages');
+if (clearGitMessagesBtn) {
+    clearGitMessagesBtn.addEventListener('click', () => {
+        const messagesContainer = document.getElementById('git-messages');
+        if (messagesContainer) {
+            messagesContainer.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">No messages yet</p>';
+        }
+    });
+}
+
 // Git branch buttons
 const fetchBranchesBtn = document.getElementById('fetch-branches');
 if (fetchBranchesBtn) {
@@ -2708,10 +2791,11 @@ if (fetchBranchesBtn) {
             
             if (result.error) {
                 await showAlert('Error', `Error fetching: ${result.error}`);
+                addGitMessage('Fetch Error', result.message || result.error, 'error');
             } else {
                 // After successful fetch, refresh branches to show updated remote branches
                 await loadBranches();
-                await showAlert('Success', 'Fetched latest changes from remote!');
+                addGitMessage('Fetch Success', result.message || 'Fetched latest changes from remote', 'success');
             }
         } catch (error) {
             await showAlert('Error', `Error: ${error.message}`);

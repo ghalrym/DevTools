@@ -439,10 +439,11 @@ ipcMain.handle('git:push', async (event, remote = 'origin', branch = null) => {
   try {
     const status = await git.status();
     const currentBranch = branch || status.current;
-    await git.push(remote, currentBranch);
-    return { success: true };
+    // Use raw to capture the output
+    const pushResult = await git.raw(['push', remote, currentBranch]);
+    return { success: true, message: pushResult || 'Push completed successfully' };
   } catch (error) {
-    return { error: error.message };
+    return { error: error.message, message: error.message };
   }
 });
 
@@ -454,10 +455,11 @@ ipcMain.handle('git:force-push', async (event, remote = 'origin', branch = null)
   try {
     const status = await git.status();
     const currentBranch = branch || status.current;
-    await git.push(remote, currentBranch, ['--force']);
-    return { success: true };
+    // Use raw to capture the output
+    const pushResult = await git.raw(['push', remote, currentBranch, '--force']);
+    return { success: true, message: pushResult || 'Force push completed successfully' };
   } catch (error) {
-    return { error: error.message };
+    return { error: error.message, message: error.message };
   }
 });
 
@@ -467,10 +469,23 @@ ipcMain.handle('git:fetch', async (event, remote = 'origin') => {
   }
 
   try {
-    await git.fetch(remote);
-    return { success: true };
+    const fetchResult = await git.raw(['fetch', remote]);
+    return { success: true, message: fetchResult || 'Fetch completed successfully' };
   } catch (error) {
-    return { error: error.message };
+    return { error: error.message, message: error.message };
+  }
+});
+
+ipcMain.handle('git:pull', async (event, remote = 'origin', branch = null) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    const pullResult = await git.raw(['pull', remote, branch || '']);
+    return { success: true, message: pullResult || 'Pull completed successfully' };
+  } catch (error) {
+    return { error: error.message, message: error.message };
   }
 });
 
