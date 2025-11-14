@@ -460,6 +460,32 @@ ipcMain.handle('git:checkout-branch', async (event, branchName) => {
   }
 });
 
+ipcMain.handle('git:create-branch', async (event, branchName) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    await git.checkoutLocalBranch(branchName);
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('git:delete-branch', async (event, branchName, force) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    await git.deleteLocalBranch(branchName, force || false);
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
 // IPC Handlers for Settings/Config
 ipcMain.handle('config:get-git-repo-path', async () => {
   const config = loadConfig();

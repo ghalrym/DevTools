@@ -52,9 +52,12 @@
             <div class="git-container">
                 <div class="git-sidebar">
                     <h2>Branches</h2>
-                    <button id="refresh-branches" class="btn btn-secondary" style="width: 100%; margin-bottom: 15px;">🔄 Refresh</button>
                     <div id="branches-list" class="branches-list">
                         <p class="placeholder">No repository selected</p>
+                    </div>
+                    <div class="sidebar-footer">
+                        <button id="create-branch" class="btn btn-primary" style="width: 100%; margin-bottom: 10px;">➕ Create Branch</button>
+                        <button id="refresh-branches" class="btn btn-secondary" style="width: 100%;">🔄 Refresh</button>
                     </div>
                 </div>
                 <div class="git-main">
@@ -120,6 +123,23 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Custom Modal for Branch Name Input -->
+    <div id="branch-name-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3>Create New Branch</h3>
+            <input type="text" id="branch-name-input" class="modal-input" placeholder="Enter branch name..." autofocus>
+            <div class="modal-actions">
+                <button id="branch-name-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="branch-name-confirm" class="btn btn-primary">Create Branch</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu for Branches -->
+    <div id="branch-context-menu" class="context-menu" style="display: none;">
+        <div class="context-menu-item" id="context-delete-branch">🗑️ Delete Branch</div>
     </div>
 
     <script src="renderer.js"></script>

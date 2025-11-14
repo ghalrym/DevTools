@@ -29,6 +29,8 @@ document.querySelectorAll('.tab-button').forEach(button => {
             // Always try to load, let the functions handle errors gracefully
             loadBranches();
             loadCommitFiles();
+            // Re-setup the create branch button in case it was recreated
+            setupCreateBranchButton();
         } else if (tabName === 'settings') {
             loadSettings();
         }
@@ -789,6 +791,12 @@ async function loadBranches() {
             item.addEventListener('click', () => checkoutBranch(branch.name));
         }
         
+        // Add right-click context menu
+        item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showBranchContextMenu(e, branch.name, branch.current);
+        });
+        
         branchesList.appendChild(item);
     });
 }
@@ -805,6 +813,54 @@ async function checkoutBranch(branchName) {
     } else {
         await loadBranches();
         await loadCommitFiles();
+    }
+}
+
+function showBranchContextMenu(e, branchName, isCurrent) {
+    const contextMenu = document.getElementById('branch-context-menu');
+    if (!contextMenu) return;
+    
+    // Hide delete option for current branch
+    const deleteItem = document.getElementById('context-delete-branch');
+    if (deleteItem) {
+        deleteItem.style.display = isCurrent ? 'none' : 'block';
+        deleteItem.dataset.branchName = branchName;
+    }
+    
+    // Position the menu at cursor
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = `${e.pageX}px`;
+    contextMenu.style.top = `${e.pageY}px`;
+    
+    // Hide menu when clicking elsewhere
+    const hideMenu = (event) => {
+        if (!contextMenu.contains(event.target)) {
+            contextMenu.style.display = 'none';
+            document.removeEventListener('click', hideMenu);
+        }
+    };
+    
+    setTimeout(() => {
+        document.addEventListener('click', hideMenu);
+    }, 10);
+}
+
+async function deleteBranch(branchName) {
+    if (!confirm(`Are you sure you want to delete branch "${branchName}"?\n\nThis action cannot be undone.`)) {
+        return;
+    }
+    
+    // Check if branch has unmerged changes
+    const force = confirm('Force delete? (Use this if the branch has unmerged changes)');
+    
+    const result = await ipcRenderer.invoke('git:delete-branch', branchName, force);
+    
+    if (result.error) {
+        alert(`Error deleting branch: ${result.error}`);
+    } else {
+        await loadBranches();
+        await loadCommitFiles();
+        alert(`Branch "${branchName}" deleted successfully!`);
     }
 }
 
@@ -1256,10 +1312,48 @@ async function commitAndPush() {
 }
 
 // Event listeners for Git
-document.getElementById('refresh-branches').addEventListener('click', async () => {
-    await loadBranches();
-    await loadCommitFiles();
-});
+async function handleCreateBranch() {
+    const branchName = prompt('Enter new branch name:');
+    
+    if (!branchName || !branchName.trim()) {
+        return;
+    }
+    
+    const trimmedName = branchName.trim();
+    
+    // Basic validation
+    if (!/^[a-zA-Z0-9._/-]+$/.test(trimmedName)) {
+        alert('Invalid branch name. Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('git:create-branch', trimmedName);
+        
+        if (result.error) {
+            alert(`Error creating branch: ${result.error}`);
+        } else {
+            // Refresh branches and checkout the new branch
+            await loadBranches();
+            await loadCommitFiles();
+            alert(`Branch "${trimmedName}" created and checked out successfully!`);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Make function available globally for onclick handler - ensure it's available immediately
+window.handleCreateBranchClick = handleCreateBranch;
+
+// Also ensure it's set up after DOM loads
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        window.handleCreateBranchClick = handleCreateBranch;
+    });
+} else {
+    window.handleCreateBranchClick = handleCreateBranch;
+}
 const openSettingsBtn = document.getElementById('open-settings');
 if (openSettingsBtn) {
     openSettingsBtn.addEventListener('click', (e) => {
@@ -1343,6 +1437,169 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
 });
 document.getElementById('commit-btn').addEventListener('click', commitChanges);
 document.getElementById('commit-push-btn').addEventListener('click', commitAndPush);
+
+// Create branch button - use direct event listener
+function setupCreateBranchButton() {
+    const btn = document.getElementById('create-branch');
+    if (!btn) return false;
+    
+    // Remove any existing event listeners by cloning
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+    
+    // Set up handler on the new button
+    newBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        showBranchNameModal();
+    });
+    
+    return true;
+}
+
+// Try to set up immediately
+if (!setupCreateBranchButton()) {
+    // Retry after a delay
+    setTimeout(() => {
+        if (!setupCreateBranchButton()) {
+            setTimeout(() => setupCreateBranchButton(), 2000);
+        }
+    }, 500);
+}
+
+// Branch name modal functions
+function showBranchNameModal() {
+    const modal = document.getElementById('branch-name-modal');
+    const input = document.getElementById('branch-name-input');
+    if (modal && input) {
+        modal.style.display = 'flex';
+        input.value = '';
+        input.focus();
+    }
+}
+
+function hideBranchNameModal() {
+    const modal = document.getElementById('branch-name-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function createBranchFromModal() {
+    const input = document.getElementById('branch-name-input');
+    if (!input) return;
+    
+    const branchName = input.value.trim();
+    if (!branchName) {
+        alert('Please enter a branch name.');
+        return;
+    }
+    
+    if (!/^[a-zA-Z0-9._/-]+$/.test(branchName)) {
+        alert('Invalid branch name. Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
+        return;
+    }
+    
+    hideBranchNameModal();
+    
+    ipcRenderer.invoke('git:create-branch', branchName).then(result => {
+        if (result.error) {
+            alert(`Error creating branch: ${result.error}`);
+        } else {
+            loadBranches().then(() => {
+                loadCommitFiles().then(() => {
+                    alert(`Branch "${branchName}" created and checked out successfully!`);
+                });
+            });
+        }
+    }).catch(error => {
+        alert(`Error: ${error.message}`);
+    });
+}
+
+// Set up modal event listeners
+function setupBranchModalListeners() {
+    const cancelBtn = document.getElementById('branch-name-cancel');
+    const confirmBtn = document.getElementById('branch-name-confirm');
+    const input = document.getElementById('branch-name-input');
+    const modal = document.getElementById('branch-name-modal');
+    
+    if (cancelBtn) {
+        cancelBtn.onclick = hideBranchNameModal;
+    }
+    
+    if (confirmBtn) {
+        confirmBtn.onclick = createBranchFromModal;
+    }
+    
+    if (input) {
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                createBranchFromModal();
+            } else if (e.key === 'Escape') {
+                hideBranchNameModal();
+            }
+        };
+    }
+    
+    if (modal) {
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                hideBranchNameModal();
+            }
+        };
+    }
+}
+
+// Set up immediately and also on DOMContentLoaded
+setupBranchModalListeners();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupBranchModalListeners);
+}
+
+// Set up context menu delete handler
+function setupContextMenuHandler() {
+    const contextDeleteBranch = document.getElementById('context-delete-branch');
+    if (contextDeleteBranch) {
+        contextDeleteBranch.onclick = (e) => {
+            const branchName = e.target.dataset.branchName;
+            if (branchName) {
+                deleteBranch(branchName);
+                const contextMenu = document.getElementById('branch-context-menu');
+                if (contextMenu) {
+                    contextMenu.style.display = 'none';
+                }
+            }
+        };
+        return true;
+    }
+    return false;
+}
+
+if (!setupContextMenuHandler()) {
+    setTimeout(() => setupContextMenuHandler(), 100);
+}
+
+// Git branch buttons
+const refreshBranchesBtn = document.getElementById('refresh-branches');
+if (refreshBranchesBtn) {
+    refreshBranchesBtn.addEventListener('click', async () => {
+        await loadBranches();
+        await loadCommitFiles();
+    });
+} else {
+    // Retry if element doesn't exist yet
+    setTimeout(() => {
+        const btn = document.getElementById('refresh-branches');
+        if (btn) {
+            btn.addEventListener('click', async () => {
+                await loadBranches();
+                await loadCommitFiles();
+            });
+        }
+    }, 500);
+}
+
 
 // Initialize on load
 loadContainers();
