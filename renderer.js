@@ -984,14 +984,10 @@ async function loadBranches() {
                 ${branch.current ? '<span class="branch-indicator">current</span>' : ''}
             `;
             
-            if (!branch.current) {
-                item.addEventListener('click', () => checkoutBranch(branch.name));
-            }
-            
             // Add right-click context menu (only for local branches)
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                showBranchContextMenu(e, branch.name, branch.current);
+                showBranchContextMenu(e, branch.name, branch.current, 'local', null);
             });
             
             localList.appendChild(item);
@@ -1063,8 +1059,11 @@ async function loadBranches() {
                 <span class="branch-name">${escapeHtml(branch.name)}</span>
             `;
             
-            // Clicking a remote branch will checkout and track it
-            item.addEventListener('click', () => checkoutRemoteBranch(branch.fullName, branch.name));
+            // Add right-click context menu for remote branches
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showBranchContextMenu(e, branch.name, false, 'remote', branch.fullName);
+            });
             
             remoteList.appendChild(item);
         });
@@ -1135,14 +1134,26 @@ async function checkoutRemoteBranch(remoteBranchName, localBranchName) {
     }
 }
 
-function showBranchContextMenu(e, branchName, isCurrent) {
+function showBranchContextMenu(e, branchName, isCurrent, branchType, remoteBranchFullName) {
     const contextMenu = document.getElementById('branch-context-menu');
     if (!contextMenu) return;
     
-    // Hide delete option for current branch
+    // Store branch information in the context menu
+    contextMenu.dataset.branchName = branchName;
+    contextMenu.dataset.branchType = branchType || 'local';
+    contextMenu.dataset.remoteBranchFullName = remoteBranchFullName || '';
+    contextMenu.dataset.isCurrent = isCurrent ? 'true' : 'false';
+    
+    // Show/hide checkout option (hide if current branch)
+    const checkoutItem = document.getElementById('context-checkout-branch');
+    if (checkoutItem) {
+        checkoutItem.style.display = isCurrent ? 'none' : 'block';
+    }
+    
+    // Hide delete option for current branch (only for local branches)
     const deleteItem = document.getElementById('context-delete-branch');
     if (deleteItem) {
-        deleteItem.style.display = isCurrent ? 'none' : 'block';
+        deleteItem.style.display = (isCurrent || branchType === 'remote') ? 'none' : 'block';
         deleteItem.dataset.branchName = branchName;
     }
     
@@ -2035,23 +2046,43 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', setupBranchModalListeners);
 }
 
-// Set up context menu delete handler
+// Set up context menu handlers
 function setupContextMenuHandler() {
+    const contextMenu = document.getElementById('branch-context-menu');
+    if (!contextMenu) return false;
+    
+    // Checkout handler
+    const contextCheckoutBranch = document.getElementById('context-checkout-branch');
+    if (contextCheckoutBranch) {
+        contextCheckoutBranch.onclick = (e) => {
+            const branchName = contextMenu.dataset.branchName;
+            const branchType = contextMenu.dataset.branchType;
+            const remoteBranchFullName = contextMenu.dataset.remoteBranchFullName;
+            
+            if (branchName) {
+                if (branchType === 'remote' && remoteBranchFullName) {
+                    checkoutRemoteBranch(remoteBranchFullName, branchName);
+                } else {
+                    checkoutBranch(branchName);
+                }
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
+    // Delete handler
     const contextDeleteBranch = document.getElementById('context-delete-branch');
     if (contextDeleteBranch) {
         contextDeleteBranch.onclick = (e) => {
             const branchName = e.target.dataset.branchName;
             if (branchName) {
                 deleteBranch(branchName);
-                const contextMenu = document.getElementById('branch-context-menu');
-                if (contextMenu) {
-                    contextMenu.style.display = 'none';
-                }
+                contextMenu.style.display = 'none';
             }
         };
-        return true;
     }
-    return false;
+    
+    return true;
 }
 
 if (!setupContextMenuHandler()) {
