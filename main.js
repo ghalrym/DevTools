@@ -461,6 +461,19 @@ ipcMain.handle('git:force-push', async (event, remote = 'origin', branch = null)
   }
 });
 
+ipcMain.handle('git:fetch', async (event, remote = 'origin') => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    await git.fetch(remote);
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
 ipcMain.handle('git:get-commit-diff', async (event, commitHash) => {
   if (!git) {
     return { error: 'Git repository not initialized' };

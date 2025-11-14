@@ -2695,6 +2695,33 @@ function setupDiffModal() {
 setupDiffModal();
 
 // Git branch buttons
+const fetchBranchesBtn = document.getElementById('fetch-branches');
+if (fetchBranchesBtn) {
+    fetchBranchesBtn.addEventListener('click', async () => {
+        const button = fetchBranchesBtn;
+        const originalText = button.textContent;
+        button.textContent = '📥 Fetching...';
+        button.disabled = true;
+        
+        try {
+            const result = await ipcRenderer.invoke('git:fetch');
+            
+            if (result.error) {
+                await showAlert('Error', `Error fetching: ${result.error}`);
+            } else {
+                // After successful fetch, refresh branches to show updated remote branches
+                await loadBranches();
+                await showAlert('Success', 'Fetched latest changes from remote!');
+            }
+        } catch (error) {
+            await showAlert('Error', `Error: ${error.message}`);
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
+        }
+    });
+}
+
 const refreshBranchesBtn = document.getElementById('refresh-branches');
 if (refreshBranchesBtn) {
     refreshBranchesBtn.addEventListener('click', async () => {
