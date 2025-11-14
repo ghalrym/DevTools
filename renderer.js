@@ -1817,6 +1817,23 @@ document.getElementById('commit-btn').addEventListener('click', commitChanges);
 document.getElementById('commit-push-btn').addEventListener('click', commitAndPush);
 document.getElementById('force-push-btn').addEventListener('click', forcePush);
 
+// Refresh commit files button
+const refreshCommitFilesBtn = document.getElementById('refresh-commit-files');
+if (refreshCommitFilesBtn) {
+    refreshCommitFilesBtn.addEventListener('click', async () => {
+        await loadCommitFiles();
+    });
+} else {
+    setTimeout(() => {
+        const btn = document.getElementById('refresh-commit-files');
+        if (btn) {
+            btn.addEventListener('click', async () => {
+                await loadCommitFiles();
+            });
+        }
+    }, 500);
+}
+
 // Create branch button - use direct event listener
 function setupCreateBranchButton() {
     const btn = document.getElementById('create-branch');
