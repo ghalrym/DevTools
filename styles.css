@@ -735,6 +735,20 @@ header h1 {
     cursor: not-allowed;
 }
 
+.btn-warning {
+    background: #ffaa00;
+    color: #fff;
+}
+
+.btn-warning:hover {
+    background: #ff9900;
+}
+
+.btn-warning:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+
 .btn-danger {
     background: #5a2d2d;
     color: #ff7f7f;

@@ -1706,9 +1706,14 @@ async function loadCommitFiles() {
                 else if (file.working_dir === '?') statusIcon = '📄';
                 else if (file.working_dir === 'D') statusIcon = '🗑️';
                 
+                // Only show rollback for modified or deleted files (not new/untracked files)
+                const canRollback = file.working_dir === 'M' || file.working_dir === 'D';
                 return `<div class="file-item-clickable" data-file="${file.path}" data-staged="false" style="padding: 4px 8px; margin: 2px 0; background: rgba(255, 255, 127, 0.1); border-left: 2px solid #ffff7f; font-size: 12px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
                     <span>${statusIcon} ${file.path}</span>
-                    <button class="btn btn-small btn-primary stage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;" onclick="event.stopPropagation();">Stage</button>
+                    <div style="display: flex; gap: 4px;">
+                        ${canRollback ? `<button class="btn btn-small btn-warning rollback-file" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px;" onclick="event.stopPropagation();">Roll Back</button>` : ''}
+                        <button class="btn btn-small btn-primary stage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px;" onclick="event.stopPropagation();">Stage</button>
+                    </div>
                 </div>`;
             }).join('');
             
@@ -1725,40 +1730,88 @@ async function loadCommitFiles() {
                 });
             });
             
-            // Attach event listeners to stage buttons
-            unstagedFilesDiv.querySelectorAll('.stage-file-from-commit').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    const filePath = e.target.dataset.file;
-                    const button = e.target;
-                    button.disabled = true;
-                    button.textContent = 'Staging...';
-                    
-                    try {
-                        const result = await ipcRenderer.invoke('git:stage-file', filePath);
+                // Attach event listeners to rollback buttons
+                unstagedFilesDiv.querySelectorAll('.rollback-file').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const filePath = e.target.dataset.file;
+                        const button = e.target;
                         
-                        if (result.error) {
-                            await showAlert('Error', `Error: ${result.error}`);
+                        const confirmed = await showConfirm(
+                            'Roll Back File',
+                            `Roll back changes to "${filePath}"?\n\nThis will discard all uncommitted changes to this file.`
+                        );
+                        
+                        if (!confirmed) {
+                            return;
+                        }
+                        
+                        button.disabled = true;
+                        button.textContent = 'Rolling back...';
+                        
+                        try {
+                            const result = await ipcRenderer.invoke('git:rollback-file', filePath);
+                            
+                            if (result.error) {
+                                await showAlert('Error', `Error: ${result.error}`);
+                                addGitMessage('Rollback Error', result.message || result.error, 'error');
+                                button.disabled = false;
+                                button.textContent = 'Roll Back';
+                            } else {
+                                addGitMessage('Rollback Success', result.message || `Rolled back ${filePath}`, 'success');
+                                // Refresh both lists
+                                await loadCommitFiles();
+                                // Ensure textarea remains accessible
+                                const textarea = document.getElementById('commit-message');
+                                if (textarea) {
+                                    textarea.style.pointerEvents = 'auto';
+                                    textarea.style.zIndex = '1';
+                                }
+                            }
+                        } catch (error) {
+                            await showAlert('Error', `Error: ${error.message}`);
+                            addGitMessage('Rollback Error', error.message, 'error');
+                            button.disabled = false;
+                            button.textContent = 'Roll Back';
+                        }
+                    });
+                });
+                
+                // Attach event listeners to stage buttons
+                unstagedFilesDiv.querySelectorAll('.stage-file-from-commit').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const filePath = e.target.dataset.file;
+                        const button = e.target;
+                        button.disabled = true;
+                        button.textContent = 'Staging...';
+                        
+                        try {
+                            const result = await ipcRenderer.invoke('git:stage-file', filePath);
+                            
+                            if (result.error) {
+                                await showAlert('Error', `Error: ${result.error}`);
+                                button.disabled = false;
+                                button.textContent = 'Stage';
+                            } else {
+                                // Refresh both lists
+                                await loadCommitFiles();
+                                // Ensure textarea remains accessible
+                                const textarea = document.getElementById('commit-message');
+                                if (textarea) {
+                                    textarea.style.pointerEvents = 'auto';
+                                    textarea.style.zIndex = '1';
+                                }
+                            }
+                        } catch (error) {
+                            await showAlert('Error', `Error: ${error.message}`);
                             button.disabled = false;
                             button.textContent = 'Stage';
-                        } else {
-                            // Refresh both lists
-                            await loadCommitFiles();
-                            // Ensure textarea remains accessible
-                            const textarea = document.getElementById('commit-message');
-                            if (textarea) {
-                                textarea.style.pointerEvents = 'auto';
-                                textarea.style.zIndex = '1';
-                            }
                         }
-                    } catch (error) {
-                        await showAlert('Error', `Error: ${error.message}`);
-                        button.disabled = false;
-                        button.textContent = 'Stage';
-                    }
+                    });
                 });
-            });
         } else {
             unstagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">No unstaged files</p>';
         }

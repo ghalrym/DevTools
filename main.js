@@ -489,6 +489,20 @@ ipcMain.handle('git:pull', async (event, remote = 'origin', branch = null) => {
   }
 });
 
+ipcMain.handle('git:rollback-file', async (event, filePath) => {
+  if (!git) {
+    return { error: 'Git repository not initialized' };
+  }
+
+  try {
+    // Use git checkout to restore the file from HEAD
+    const restoreResult = await git.raw(['checkout', 'HEAD', '--', filePath]);
+    return { success: true, message: restoreResult || `Rolled back ${filePath}` };
+  } catch (error) {
+    return { error: error.message, message: error.message };
+  }
+});
+
 ipcMain.handle('git:reset', async (event, commitHash, resetType = 'mixed') => {
   if (!git) {
     return { error: 'Git repository not initialized' };
