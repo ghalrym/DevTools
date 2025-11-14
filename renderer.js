@@ -1,0 +1,990 @@
+const { ipcRenderer } = require('electron');
+
+// Tab switching
+document.querySelectorAll('.tab-button').forEach(button => {
+    button.addEventListener('click', () => {
+        const tabName = button.dataset.tab;
+        
+        // Stop following logs when switching away from Docker tab
+        if (tabName !== 'docker') {
+            stopFollowingLogs();
+        }
+        
+        // Update tab buttons
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        
+        // Update tab content
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+        
+        // Load data when switching tabs
+        if (tabName === 'docker') {
+            loadContainers();
+            // If a container was already selected, resume following
+            if (selectedContainerId) {
+                startFollowingLogs();
+            }
+        } else if (tabName === 'git') {
+            loadGitStatus();
+        } else if (tabName === 'settings') {
+            loadSettings();
+        }
+    });
+});
+
+// Git inner tab switching
+document.querySelectorAll('.git-tab-button').forEach(button => {
+    button.addEventListener('click', () => {
+        const tabName = button.dataset.gitTab;
+        
+        document.querySelectorAll('.git-tab-button').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        
+        document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
+        document.getElementById(`git-${tabName}-tab`).classList.add('active');
+        
+        if (tabName === 'logs') {
+            loadGitLogs();
+        }
+    });
+});
+
+// Docker functionality
+let selectedContainerId = null;
+let selectedContainerStatus = null;
+let logFollowInterval = null;
+let previousLogLines = [];
+let displayedLineCount = 0;
+let isInitialLoad = true;
+let lastLogContent = '';
+let lastLogContentBeforeClear = '';
+
+function startFollowingLogs() {
+    if (!selectedContainerId) return;
+    
+    // Clear any existing interval
+    stopFollowingLogs();
+    
+    // Start following logs every 5 seconds
+    logFollowInterval = setInterval(() => {
+        loadContainerLogs(false); // false = incremental update, not force reload
+    }, 5000);
+}
+
+function stopFollowingLogs() {
+    if (logFollowInterval) {
+        clearInterval(logFollowInterval);
+        logFollowInterval = null;
+    }
+}
+
+function findLongestCommonPrefix(names) {
+    if (names.length === 0) return '';
+    if (names.length === 1) return names[0];
+    
+    // Split all names by common delimiters
+    const nameParts = names.map(name => name.split(/[-_]/));
+    
+    // Find the minimum length
+    const minLength = Math.min(...nameParts.map(parts => parts.length));
+    
+    // Find common prefix parts
+    let commonParts = [];
+    for (let i = 0; i < minLength; i++) {
+        const firstPart = nameParts[0][i];
+        const allMatch = nameParts.every(parts => parts[i] === firstPart);
+        if (allMatch) {
+            commonParts.push(firstPart);
+        } else {
+            break;
+        }
+    }
+    
+    return commonParts.join('-');
+}
+
+function groupContainersByPrefix(containerNames) {
+    const groups = {};
+    const processed = new Set();
+    
+    // Clean all names
+    const cleanNames = containerNames.map(n => n.replace(/^\//, ''));
+    
+    // For each container, find all others that share a common prefix
+    cleanNames.forEach((name, index) => {
+        if (processed.has(index)) return;
+        
+        // Find all containers that share at least the first part with this one
+        const nameParts = name.split(/[-_]/);
+        if (nameParts.length < 2) {
+            // Single part name, group by itself
+            groups[name] = [index];
+            processed.add(index);
+            return;
+        }
+        
+        // Find containers that share the first part
+        const similarIndices = [index];
+        cleanNames.forEach((otherName, otherIndex) => {
+            if (otherIndex === index || processed.has(otherIndex)) return;
+            
+            const otherParts = otherName.split(/[-_]/);
+            // Check if they share at least the first part
+            if (otherParts.length >= 1 && nameParts[0] === otherParts[0]) {
+                similarIndices.push(otherIndex);
+            }
+        });
+        
+        if (similarIndices.length > 1) {
+            // Find the longest common prefix among similar containers
+            const similarNames = similarIndices.map(i => cleanNames[i]);
+            const commonPrefix = findLongestCommonPrefix(similarNames);
+            
+            if (commonPrefix && commonPrefix.length > 0) {
+                // Mark all as processed
+                similarIndices.forEach(i => processed.add(i));
+                
+                // Use the common prefix as group name
+                if (!groups[commonPrefix]) {
+                    groups[commonPrefix] = [];
+                }
+                groups[commonPrefix].push(...similarIndices);
+            } else {
+                // No common prefix found, group individually
+                groups[name] = [index];
+                processed.add(index);
+            }
+        } else {
+            // No similar containers, group individually
+            groups[name] = [index];
+            processed.add(index);
+        }
+    });
+    
+    return groups;
+}
+
+async function loadContainers() {
+    const containersList = document.getElementById('containers-list');
+    containersList.innerHTML = '<p class="loading">Loading containers...</p>';
+    
+    const result = await ipcRenderer.invoke('docker:list-containers');
+    
+    if (result.error) {
+        containersList.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        return;
+    }
+    
+    if (result.containers.length === 0) {
+        containersList.innerHTML = '<p class="placeholder">No containers found</p>';
+        return;
+    }
+    
+    containersList.innerHTML = '';
+    
+    // Get all container names first
+    const allContainerNames = result.containers.map(c => c.Names[0]?.replace('/', '') || 'Unnamed');
+    
+    // Group containers by finding longest common prefix
+    const indexGroups = groupContainersByPrefix(allContainerNames);
+    
+    // Convert index groups to container groups
+    const groups = {};
+    Object.keys(indexGroups).forEach(groupName => {
+        groups[groupName] = indexGroups[groupName].map(index => {
+            const container = result.containers[index];
+            const containerName = container.Names[0]?.replace('/', '') || 'Unnamed';
+            return {
+                ...container,
+                displayName: containerName
+            };
+        });
+    });
+    
+    // Sort groups alphabetically
+    const sortedGroups = Object.keys(groups).sort();
+    
+    sortedGroups.forEach(groupName => {
+        const containers = groups[groupName];
+        
+        // If only one container in group, display it directly without grouping
+        if (containers.length === 1) {
+            const container = containers[0];
+            const item = document.createElement('div');
+            item.className = 'container-item';
+            item.dataset.containerId = container.Id;
+            
+            const statusClass = container.Status.startsWith('Up') ? 'running' : 
+                               container.Status.startsWith('Exited') ? 'exited' : 'created';
+            
+            item.innerHTML = `
+                <div class="container-item-header">
+                    <span class="container-name">${container.displayName}</span>
+                    <span class="container-status ${statusClass}">${container.Status.split(' ')[0]}</span>
+                </div>
+                <div class="container-id">${container.Id.substring(0, 12)}</div>
+            `;
+            
+            item.addEventListener('click', () => selectContainer(container.Id, container.displayName, container.Status));
+            
+            containersList.appendChild(item);
+        } else {
+            // Multiple containers, create a group
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'container-group';
+            groupDiv.innerHTML = `
+                <div class="container-group-header">
+                    <span class="group-toggle">▶</span>
+                    <span class="group-name">${groupName}</span>
+                    <span class="group-count">(${containers.length})</span>
+                </div>
+                <div class="container-group-items" style="display: none;">
+                </div>
+            `;
+            
+            const groupItems = groupDiv.querySelector('.container-group-items');
+            const groupHeader = groupDiv.querySelector('.container-group-header');
+            const groupToggle = groupDiv.querySelector('.group-toggle');
+            
+            // Sort containers within group
+            containers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+            
+            containers.forEach(container => {
+                const item = document.createElement('div');
+                item.className = 'container-item container-item-nested';
+                item.dataset.containerId = container.Id;
+                
+                const statusClass = container.Status.startsWith('Up') ? 'running' : 
+                                   container.Status.startsWith('Exited') ? 'exited' : 'created';
+                
+                item.innerHTML = `
+                    <div class="container-item-header">
+                        <span class="container-name">${container.displayName}</span>
+                        <span class="container-status ${statusClass}">${container.Status.split(' ')[0]}</span>
+                    </div>
+                    <div class="container-id">${container.Id.substring(0, 12)}</div>
+                `;
+                
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectContainer(container.Id, container.displayName, container.Status);
+                });
+                
+                groupItems.appendChild(item);
+            });
+            
+            // Toggle group on header click
+            groupHeader.addEventListener('click', () => {
+                const isExpanded = groupItems.style.display !== 'none';
+                groupItems.style.display = isExpanded ? 'none' : 'block';
+                groupToggle.textContent = isExpanded ? '▶' : '▼';
+            });
+            
+            containersList.appendChild(groupDiv);
+        }
+    });
+}
+
+async function selectContainer(containerId, containerName, containerStatus) {
+    // Stop any existing log following
+    stopFollowingLogs();
+    
+    selectedContainerId = containerId;
+    selectedContainerStatus = containerStatus;
+    previousLogLines = [];
+    displayedLineCount = 0;
+    lastLogContent = '';
+    isInitialLoad = true;
+    
+    // Update UI
+    document.querySelectorAll('.container-item').forEach(item => {
+        item.classList.remove('selected');
+        if (item.dataset.containerId === containerId) {
+            item.classList.add('selected');
+        }
+    });
+    
+    document.getElementById('selected-container-name').textContent = containerName;
+    
+    // Update button states based on container status
+    updateContainerButtonStates(containerStatus);
+    
+    await loadContainerLogs(true);
+    
+    // Automatically start following logs
+    startFollowingLogs();
+}
+
+function updateContainerButtonStates(status) {
+    const isRunning = status && status.startsWith('Up');
+    const startBtn = document.getElementById('start-container');
+    const stopBtn = document.getElementById('stop-container');
+    const restartBtn = document.getElementById('restart-container');
+    
+    // Start button: disabled when running
+    startBtn.disabled = isRunning;
+    
+    // Stop and Restart buttons: disabled when not running
+    stopBtn.disabled = !isRunning;
+    restartBtn.disabled = !isRunning;
+}
+
+async function refreshContainerStatus() {
+    if (!selectedContainerId) return;
+    
+    const result = await ipcRenderer.invoke('docker:list-containers');
+    if (result.error || !result.containers) return;
+    
+    const container = result.containers.find(c => c.Id === selectedContainerId);
+    if (container) {
+        selectedContainerStatus = container.Status;
+        updateContainerButtonStates(container.Status);
+    }
+}
+
+function cleanLogLine(line) {
+    if (line.trim() === '') return '';
+    
+    let cleaned = line;
+    
+    // Remove ANSI escape codes (color codes, formatting, etc.)
+    // Matches patterns like [32m, [0m, [1m, [36m, [31m, [33m, etc.
+    cleaned = cleaned.replace(/\x1b\[[0-9;]*m/g, '');
+    cleaned = cleaned.replace(/\033\[[0-9;]*m/g, '');
+    cleaned = cleaned.replace(/\[[0-9;]*m/g, '');
+    
+    // Remove the full Docker log prefix pattern in one go:
+    // Control char + timestamp + IP + HTTP log format
+    // Pattern:2025-11-13T20:55:49.326542660Z 172.18.0.1 - - [13/Nov/2025:20:55:49 +0000] "
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+-\s+-\s+\[\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s+\+\d{4}\]\s+"?\s*/, '');
+    
+    // Also handle cases where some parts might be missing (fallback patterns)
+    // Remove standalone timestamp at start
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s*/, '');
+    
+    // Remove IP address patterns at the start (e.g., "172.18.0.1 - -")
+    cleaned = cleaned.replace(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+-\s+-\s+/, '');
+    
+    // Remove HTTP log format: [DD/Mon/YYYY:HH:mm:ss +0000] "
+    cleaned = cleaned.replace(/^\[\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s+\+\d{4}\]\s+"?\s*/, '');
+    
+    // Remove log level prefixes like "INFO: " or "ERROR: "
+    cleaned = cleaned.replace(/^(INFO|ERROR|WARN|DEBUG|TRACE):\s*/, '');
+    
+    // Remove IP:port patterns at the start (e.g., "172.18.0.5:59410 - ")
+    cleaned = cleaned.replace(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+\s+-\s+/, '');
+    
+    // Remove any remaining control characters at the start
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]+/, '');
+    
+    // Remove non-ASCII characters (keep only ASCII 32-126: printable characters)
+    cleaned = cleaned.replace(/[^\x20-\x7E]/g, '');
+    
+    // Remove any remaining leading whitespace
+    cleaned = cleaned.trimStart();
+    
+    return cleaned;
+}
+
+function formatLogLine(line) {
+    const cleaned = cleanLogLine(line);
+    if (cleaned === '') return '';
+    
+    if (cleaned.includes('ERROR') || cleaned.includes('error')) {
+        return `<span style="color: #ff7f7f">${escapeHtml(cleaned)}</span>`;
+    } else if (cleaned.includes('WARN') || cleaned.includes('warn')) {
+        return `<span style="color: #ffff7f">${escapeHtml(cleaned)}</span>`;
+    } else {
+        return escapeHtml(cleaned);
+    }
+}
+
+function isAtBottom(element) {
+    const threshold = 50; // pixels from bottom
+    return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
+}
+
+async function loadContainerLogs(forceReload = false) {
+    if (!selectedContainerId) return;
+    
+    const logOutput = document.getElementById('container-logs');
+    const tailLines = 100; // Fixed to 100 lines
+    
+    // Check if user is at bottom before updating
+    const wasAtBottom = isAtBottom(logOutput);
+    
+    // Show loading only on initial load or force reload
+    if (isInitialLoad || forceReload) {
+        logOutput.innerHTML = '<p class="loading">Loading logs...</p>';
+    }
+    
+    const result = await ipcRenderer.invoke('docker:get-logs', selectedContainerId, tailLines);
+    
+    if (result.error) {
+        logOutput.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        previousLogLines = [];
+        displayedLineCount = 0;
+        lastLogContent = '';
+        isInitialLoad = true;
+        return;
+    }
+    
+    // Parse new logs (filter out empty lines after cleaning)
+    const rawLines = result.logs.split('\n');
+    const newLines = rawLines.map(line => cleanLogLine(line)).filter(line => line.trim() !== '');
+    
+    if (isInitialLoad || forceReload || displayedLineCount === 0) {
+        // Initial load or force reload - replace all content
+        const formattedContent = newLines.map(formatLogLine).join('\n');
+        logOutput.innerHTML = formattedContent;
+        displayedLineCount = newLines.length;
+        previousLogLines = newLines;
+        lastLogContent = result.logs;
+        isInitialLoad = false;
+        logOutput.scrollTop = logOutput.scrollHeight;
+    } else {
+        // Incremental update - check for new content by comparing with previous
+        const currentLogContent = result.logs;
+        
+        // If logs were cleared, only show content that's NEWER than what we had before clearing
+        if (lastLogContentBeforeClear && displayedLineCount === 0) {
+            // We cleared logs, so find where new content starts
+            const beforeClearLines = lastLogContentBeforeClear.split('\n').map(line => cleanLogLine(line)).filter(line => line.trim() !== '');
+            
+            if (beforeClearLines.length > 0) {
+                // Find the last line we had before clearing in the new content
+                const lastLineBeforeClear = beforeClearLines[beforeClearLines.length - 1];
+                let startIndex = 0;
+                
+                for (let i = 0; i < newLines.length; i++) {
+                    if (newLines[i] === lastLineBeforeClear) {
+                        startIndex = i + 1;
+                        break;
+                    }
+                }
+                
+                // Only show lines after the clear point
+                if (startIndex < newLines.length) {
+                    const newContentLines = newLines.slice(startIndex);
+                    const newContent = newContentLines.map(formatLogLine).join('\n');
+                    
+                    if (newContent) {
+                        // Replace the "waiting for new logs" message with actual new content
+                        logOutput.innerHTML = newContent;
+                        displayedLineCount = newContentLines.length;
+                        previousLogLines = newContentLines;
+                        lastLogContentBeforeClear = ''; // Reset clear flag
+                        
+                        if (wasAtBottom) {
+                            logOutput.scrollTop = logOutput.scrollHeight;
+                        }
+                    } else {
+                        // No new content yet, keep showing the placeholder
+                        return;
+                    }
+                } else {
+                    // No new content yet, keep showing the placeholder
+                    return;
+                }
+            }
+        } else if (currentLogContent !== lastLogContent) {
+            // Normal incremental update - find and append new lines
+            let startIndex = 0;
+            
+            // Try to find the last displayed line in the new content
+            if (previousLogLines.length > 0) {
+                const lastDisplayedLine = previousLogLines[previousLogLines.length - 1];
+                for (let i = 0; i < newLines.length; i++) {
+                    if (newLines[i] === lastDisplayedLine) {
+                        startIndex = i + 1;
+                        break;
+                    }
+                }
+            }
+            
+            // If we found new lines, append them
+            if (startIndex < newLines.length) {
+                const newContentLines = newLines.slice(startIndex);
+                const newContent = newContentLines.map(formatLogLine).join('\n');
+                
+                if (newContent) {
+                    // Append new content without replacing existing
+                    const currentContent = logOutput.innerHTML;
+                    // Only add newline if current content doesn't end with one
+                    const separator = currentContent && !currentContent.endsWith('\n') && !currentContent.endsWith('<br>') && !currentContent.includes('waiting for new logs') ? '\n' : '';
+                    // Remove placeholder if it exists
+                    const contentToAppend = currentContent.includes('waiting for new logs') ? newContent : currentContent + separator + newContent;
+                    logOutput.innerHTML = contentToAppend;
+                    
+                    // Only auto-scroll if user was at bottom
+                    if (wasAtBottom) {
+                        logOutput.scrollTop = logOutput.scrollHeight;
+                    }
+                }
+                
+                displayedLineCount = newLines.length;
+            }
+        }
+        
+        // Update tracking variables
+        previousLogLines = newLines.slice(-tailLines);
+        lastLogContent = currentLogContent;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Event listeners for Docker
+document.getElementById('refresh-containers').addEventListener('click', loadContainers);
+
+document.getElementById('start-container').addEventListener('click', async () => {
+    if (!selectedContainerId) {
+        alert('Please select a container first');
+        return;
+    }
+    
+    const button = document.getElementById('start-container');
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Starting...';
+    
+    try {
+        const result = await ipcRenderer.invoke('docker:start-container', selectedContainerId);
+        if (result.error) {
+            alert(`Error starting container: ${result.error}`);
+        } else {
+            // Refresh container status and reload logs
+            await refreshContainerStatus();
+            await loadContainers(); // Refresh container list
+            previousLogLines = [];
+            displayedLineCount = 0;
+            lastLogContent = '';
+            isInitialLoad = true;
+            await loadContainerLogs(true);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+    }
+});
+
+document.getElementById('stop-container').addEventListener('click', async () => {
+    if (!selectedContainerId) {
+        alert('Please select a container first');
+        return;
+    }
+    
+    const button = document.getElementById('stop-container');
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Stopping...';
+    
+    try {
+        const result = await ipcRenderer.invoke('docker:stop-container', selectedContainerId);
+        if (result.error) {
+            alert(`Error stopping container: ${result.error}`);
+        } else {
+            // Refresh container status and reload logs
+            await refreshContainerStatus();
+            await loadContainers(); // Refresh container list
+            previousLogLines = [];
+            displayedLineCount = 0;
+            lastLogContent = '';
+            isInitialLoad = true;
+            await loadContainerLogs(true);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+    }
+});
+
+document.getElementById('restart-container').addEventListener('click', async () => {
+    if (!selectedContainerId) {
+        alert('Please select a container first');
+        return;
+    }
+    
+    const button = document.getElementById('restart-container');
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Restarting...';
+    
+    try {
+        const result = await ipcRenderer.invoke('docker:restart-container', selectedContainerId);
+        if (result.error) {
+            alert(`Error restarting container: ${result.error}`);
+        } else {
+            // Refresh container status and reload logs
+            await refreshContainerStatus();
+            await loadContainers(); // Refresh container list
+            previousLogLines = [];
+            displayedLineCount = 0;
+            lastLogContent = '';
+            isInitialLoad = true;
+            await loadContainerLogs(true);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+    }
+});
+
+document.getElementById('clear-logs').addEventListener('click', () => {
+    const logOutput = document.getElementById('container-logs');
+    logOutput.innerHTML = '<p class="placeholder">Logs cleared - waiting for new logs...</p>';
+    
+    // Save the last log content before clearing so we can detect new logs
+    lastLogContentBeforeClear = lastLogContent;
+    
+    // Reset display tracking but keep lastLogContent to compare against
+    previousLogLines = [];
+    displayedLineCount = 0;
+    isInitialLoad = true;
+});
+
+// Git functionality
+let currentRepoPath = null;
+
+async function setRepository(repoPath = null) {
+    if (!repoPath) {
+        const input = document.getElementById('settings-repo-path');
+        if (input) {
+            repoPath = input.value.trim() || process.cwd();
+        } else {
+            repoPath = localStorage.getItem('gitRepoPath') || process.cwd();
+        }
+    }
+    
+    // Normalize path - use empty string if it's the current directory
+    const normalizedPath = repoPath === process.cwd() ? '' : repoPath;
+    currentRepoPath = repoPath;
+    
+    const result = await ipcRenderer.invoke('git:set-repo', repoPath);
+    
+    if (result.error) {
+        if (document.getElementById('settings-repo-status')) {
+            document.getElementById('settings-repo-status').innerHTML = `<div class="error">❌ Error: ${result.error}</div>`;
+        }
+        if (document.getElementById('repo-status')) {
+            document.getElementById('repo-status').innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        }
+        return false;
+    }
+    
+    // Save to localStorage (save the actual path, not normalized)
+    localStorage.setItem('gitRepoPath', repoPath);
+    
+    // Update settings input if it exists
+    if (document.getElementById('settings-repo-path')) {
+        document.getElementById('settings-repo-path').value = repoPath;
+    }
+    
+    await loadGitStatus();
+    return true;
+}
+
+function loadSettings() {
+    // Load saved repository path from localStorage
+    const savedRepoPath = localStorage.getItem('gitRepoPath');
+    if (savedRepoPath && document.getElementById('settings-repo-path')) {
+        document.getElementById('settings-repo-path').value = savedRepoPath;
+    }
+    
+    // Update status
+    updateSettingsRepoStatus();
+}
+
+async function updateSettingsRepoStatus() {
+    const statusDiv = document.getElementById('settings-repo-status');
+    if (!statusDiv) return;
+    
+    const repoPath = document.getElementById('settings-repo-path')?.value.trim() || localStorage.getItem('gitRepoPath') || 'Not set';
+    
+    if (repoPath && repoPath !== 'Not set') {
+        const result = await ipcRenderer.invoke('git:set-repo', repoPath);
+        if (result.error) {
+            statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error}</div>`;
+        } else {
+            statusDiv.innerHTML = `<div class="success">✓ Repository configured successfully<br><span style="font-size: 12px; opacity: 0.8; margin-top: 4px; display: block;">${repoPath}</span></div>`;
+        }
+    } else {
+        statusDiv.innerHTML = '<div class="placeholder">No repository configured. Leave empty to use current directory.</div>';
+    }
+}
+
+async function loadGitStatus() {
+    const statusContent = document.getElementById('git-status-content');
+    const repoStatus = document.getElementById('repo-status');
+    
+    const result = await ipcRenderer.invoke('git:get-status');
+    
+    if (result.error) {
+        statusContent.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        repoStatus.innerHTML = `<p class="error">${result.error}</p>`;
+        return;
+    }
+    
+    const status = result.status;
+    
+    // Update repo status sidebar
+    repoStatus.innerHTML = `
+        <p><strong>Branch:</strong> <span class="branch">${status.current}</span></p>
+        <p><strong>Files:</strong> ${status.files.length} changed</p>
+        <p><strong>Staged:</strong> ${status.staged.length}</p>
+        <p><strong>Unstaged:</strong> ${status.not_added.length + status.modified.length}</p>
+    `;
+    
+    // Update status content
+    if (status.files.length === 0) {
+        statusContent.innerHTML = '<p class="placeholder">Working directory clean</p>';
+        return;
+    }
+    
+    let html = '<div class="file-list">';
+    
+    // Staged files
+    if (status.staged.length > 0) {
+        html += '<h3 style="margin-bottom: 10px; color: #4a9eff;">Staged Files</h3>';
+        status.staged.forEach(file => {
+            html += createFileItem(file, 'staged');
+        });
+    }
+    
+    // Modified files
+    if (status.modified.length > 0) {
+        html += '<h3 style="margin-top: 20px; margin-bottom: 10px; color: #ffff7f;">Modified Files</h3>';
+        status.modified.forEach(file => {
+            html += createFileItem(file, 'modified');
+        });
+    }
+    
+    // Not added files
+    if (status.not_added.length > 0) {
+        html += '<h3 style="margin-top: 20px; margin-bottom: 10px; color: #7fff7f;">Untracked Files</h3>';
+        status.not_added.forEach(file => {
+            html += createFileItem(file, 'added');
+        });
+    }
+    
+    // Deleted files
+    if (status.deleted.length > 0) {
+        html += '<h3 style="margin-top: 20px; margin-bottom: 10px; color: #ff7f7f;">Deleted Files</h3>';
+        status.deleted.forEach(file => {
+            html += createFileItem(file, 'deleted');
+        });
+    }
+    
+    html += '</div>';
+    statusContent.innerHTML = html;
+    
+    // Attach event listeners to file actions
+    attachFileActionListeners();
+}
+
+function createFileItem(filePath, status) {
+    const statusLabels = {
+        'staged': 'Staged',
+        'modified': 'Modified',
+        'added': 'Untracked',
+        'deleted': 'Deleted'
+    };
+    
+    return `
+        <div class="file-item">
+            <div>
+                <div class="file-name">${filePath}</div>
+                <span class="file-status ${status}">${statusLabels[status]}</span>
+            </div>
+            <div class="file-actions">
+                ${status !== 'staged' ? `<button class="btn btn-small btn-primary stage-file" data-file="${filePath}">Stage</button>` : ''}
+                ${status === 'staged' ? `<button class="btn btn-small btn-secondary unstage-file" data-file="${filePath}">Unstage</button>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function attachFileActionListeners() {
+    document.querySelectorAll('.stage-file').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filePath = e.target.dataset.file;
+            const result = await ipcRenderer.invoke('git:stage-file', filePath);
+            
+            if (result.error) {
+                alert(`Error: ${result.error}`);
+            } else {
+                await loadGitStatus();
+            }
+        });
+    });
+    
+    document.querySelectorAll('.unstage-file').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const filePath = e.target.dataset.file;
+            const result = await ipcRenderer.invoke('git:unstage-file', filePath);
+            
+            if (result.error) {
+                alert(`Error: ${result.error}`);
+            } else {
+                await loadGitStatus();
+            }
+        });
+    });
+}
+
+async function loadGitLogs() {
+    const logsContent = document.getElementById('git-logs-content');
+    logsContent.innerHTML = '<p class="loading">Loading commit history...</p>';
+    
+    const result = await ipcRenderer.invoke('git:get-logs', 50);
+    
+    if (result.error) {
+        logsContent.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        return;
+    }
+    
+    if (result.logs.length === 0) {
+        logsContent.innerHTML = '<p class="placeholder">No commits found</p>';
+        return;
+    }
+    
+    let html = '';
+    result.logs.forEach(commit => {
+        html += `
+            <div class="commit-log-item">
+                <div class="commit-hash">${commit.hash.substring(0, 7)}</div>
+                <div class="commit-message">${escapeHtml(commit.message)}</div>
+                <div class="commit-author">${commit.author_name} &lt;${commit.author_email}&gt; - ${new Date(commit.date).toLocaleString()}</div>
+            </div>
+        `;
+    });
+    
+    logsContent.innerHTML = html;
+}
+
+async function commitChanges() {
+    const message = document.getElementById('commit-message').value.trim();
+    const commitResult = document.getElementById('commit-result');
+    
+    if (!message) {
+        commitResult.innerHTML = '<p class="error">Please enter a commit message</p>';
+        return;
+    }
+    
+    commitResult.innerHTML = '<p class="loading">Committing...</p>';
+    
+    const result = await ipcRenderer.invoke('git:commit', message);
+    
+    if (result.error) {
+        commitResult.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        return;
+    }
+    
+    commitResult.innerHTML = '<p class="success">✓ Commit successful!</p>';
+    document.getElementById('commit-message').value = '';
+    await loadGitStatus();
+}
+
+async function commitAndPush() {
+    const message = document.getElementById('commit-message').value.trim();
+    const commitResult = document.getElementById('commit-result');
+    
+    if (!message) {
+        commitResult.innerHTML = '<p class="error">Please enter a commit message</p>';
+        return;
+    }
+    
+    commitResult.innerHTML = '<p class="loading">Committing...</p>';
+    
+    const commitResult_data = await ipcRenderer.invoke('git:commit', message);
+    
+    if (commitResult_data.error) {
+        commitResult.innerHTML = `<p class="error">Error: ${commitResult_data.error}</p>`;
+        return;
+    }
+    
+    commitResult.innerHTML = '<p class="loading">Pushing...</p>';
+    
+    const pushResult = await ipcRenderer.invoke('git:push');
+    
+    if (pushResult.error) {
+        commitResult.innerHTML = `<p class="error">Commit successful but push failed: ${pushResult.error}</p>`;
+        return;
+    }
+    
+    commitResult.innerHTML = '<p class="success">✓ Commit and push successful!</p>';
+    document.getElementById('commit-message').value = '';
+    await loadGitStatus();
+}
+
+// Event listeners for Git
+document.getElementById('refresh-git-status').addEventListener('click', loadGitStatus);
+document.getElementById('open-settings').addEventListener('click', (e) => {
+    e.preventDefault();
+    // Switch to settings tab
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelector('[data-tab="settings"]').classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById('settings-tab').classList.add('active');
+    loadSettings();
+});
+
+// Settings event listeners
+document.getElementById('settings-save-repo').addEventListener('click', async () => {
+    const input = document.getElementById('settings-repo-path');
+    const repoPath = input.value.trim();
+    
+    // Use empty string if input is empty, which will default to current directory
+    const finalPath = repoPath === '' ? process.cwd() : repoPath;
+    
+    const success = await setRepository(finalPath);
+    if (success) {
+        await updateSettingsRepoStatus();
+        // Show success feedback
+        const button = document.getElementById('settings-save-repo');
+        const originalText = button.textContent;
+        button.textContent = '✓ Saved!';
+        button.style.background = '#2d5a2d';
+        setTimeout(() => {
+            button.textContent = originalText;
+            button.style.background = '';
+        }, 2000);
+    }
+});
+document.getElementById('view-git-logs').addEventListener('click', () => {
+    document.querySelectorAll('.git-tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelector('[data-git-tab="logs"]').classList.add('active');
+    document.querySelectorAll('.git-tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById('git-logs-tab').classList.add('active');
+    loadGitLogs();
+});
+document.getElementById('stage-all').addEventListener('click', async () => {
+    const result = await ipcRenderer.invoke('git:stage-all');
+    if (result.error) {
+        alert(`Error: ${result.error}`);
+    } else {
+        await loadGitStatus();
+    }
+});
+document.getElementById('commit-btn').addEventListener('click', commitChanges);
+document.getElementById('commit-push-btn').addEventListener('click', commitAndPush);
+
+// Initialize on load
+loadContainers();
+
+// Initialize button states (all disabled until container is selected)
+document.getElementById('start-container').disabled = true;
+document.getElementById('stop-container').disabled = true;
+document.getElementById('restart-container').disabled = true;
+

@@ -1,0 +1,26 @@
+{
+  "name": "git-dockered",
+  "version": "1.0.0",
+  "description": "Desktop app for Docker container logs and Git management",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": [
+    "docker",
+    "git",
+    "desktop",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dockerode": "^4.0.0",
+    "simple-git": "^3.20.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}
+

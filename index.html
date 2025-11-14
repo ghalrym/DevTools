@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git & Docker Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🐳 Git & Docker Manager</h1>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" data-tab="docker">Docker Containers</button>
+            <button class="tab-button" data-tab="git">Git Management</button>
+            <button class="tab-button" data-tab="settings">⚙️ Settings</button>
+        </div>
+
+        <!-- Docker Tab -->
+        <div id="docker-tab" class="tab-content active">
+            <div class="docker-container">
+                <div class="sidebar">
+                    <h2>Containers</h2>
+                    <div id="containers-list" class="containers-list">
+                        <p class="loading">Loading containers...</p>
+                    </div>
+                    <div class="sidebar-footer">
+                        <button id="refresh-containers" class="btn btn-primary">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div class="main-content">
+                    <div class="log-header">
+                        <h2 id="selected-container-name">Select a container to view logs</h2>
+                        <div class="log-controls">
+                            <button id="start-container" class="btn btn-success">▶ Start Container</button>
+                            <button id="stop-container" class="btn btn-danger">⏹ Stop Container</button>
+                            <button id="restart-container" class="btn btn-primary">🔄 Restart Container</button>
+                            <button id="clear-logs" class="btn btn-secondary">🗑 Clear Logs</button>
+                        </div>
+                    </div>
+                    <div id="container-logs" class="log-output">
+                        <p class="placeholder">No container selected</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Git Tab -->
+        <div id="git-tab" class="tab-content">
+            <div class="git-container">
+                <div class="git-sidebar">
+                    <h2>Repository</h2>
+                    <div id="repo-status" class="repo-status">
+                        <p>No repository selected</p>
+                        <p><a href="#" id="open-settings" style="color: #4a9eff; text-decoration: underline; cursor: pointer; font-size: 12px; margin-top: 8px; display: block;">Configure repository in settings</a></p>
+                    </div>
+                    <div class="git-actions">
+                        <h3>Actions</h3>
+                        <button id="refresh-git-status" class="btn btn-secondary">🔄 Refresh Status</button>
+                        <button id="view-git-logs" class="btn btn-secondary">📜 View Logs</button>
+                        <button id="stage-all" class="btn btn-primary">Stage All</button>
+                    </div>
+                </div>
+                <div class="git-main">
+                    <div class="git-tabs-inner">
+                        <button class="git-tab-button active" data-git-tab="status">Status</button>
+                        <button class="git-tab-button" data-git-tab="logs">Logs</button>
+                        <button class="git-tab-button" data-git-tab="commit">Commit</button>
+                    </div>
+
+                    <!-- Git Status Tab -->
+                    <div id="git-status-tab" class="git-tab-content active">
+                        <h2>Repository Status</h2>
+                        <div id="git-status-content" class="git-content">
+                            <p class="placeholder">Select a repository to view status</p>
+                        </div>
+                    </div>
+
+                    <!-- Git Logs Tab -->
+                    <div id="git-logs-tab" class="git-tab-content">
+                        <h2>Commit History</h2>
+                        <div id="git-logs-content" class="git-content">
+                            <p class="placeholder">Select a repository to view logs</p>
+                        </div>
+                    </div>
+
+                    <!-- Git Commit Tab -->
+                    <div id="git-commit-tab" class="git-tab-content">
+                        <h2>Commit Changes</h2>
+                        <div class="commit-form">
+                            <textarea id="commit-message" placeholder="Enter commit message..." rows="4"></textarea>
+                            <div class="commit-actions">
+                                <button id="commit-btn" class="btn btn-primary">Commit</button>
+                                <button id="commit-push-btn" class="btn btn-success">Commit & Push</button>
+                            </div>
+                        </div>
+                        <div id="commit-result" class="commit-result"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings-tab" class="tab-content">
+            <div class="settings-container">
+                <h2>Settings</h2>
+                
+                <div class="settings-section">
+                    <h3>Git Repository</h3>
+                    <div class="settings-item">
+                        <label for="settings-repo-path">Repository Path:</label>
+                        <input type="text" id="settings-repo-path" class="settings-input" placeholder="Enter repository path (or leave empty for current directory)">
+                        <p class="settings-hint">Leave empty to use the current working directory</p>
+                        <div id="settings-repo-status" class="settings-status"></div>
+                    </div>
+                    <div class="settings-footer">
+                        <button id="settings-save-repo" class="btn btn-primary">Save Repository</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
+
