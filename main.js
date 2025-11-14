@@ -903,6 +903,142 @@ ipcMain.handle('diagram:delete-file', async (event, filePath) => {
   }
 });
 
+// Notes management IPC handlers
+ipcMain.handle('notes:get-directory', async () => {
+  const config = loadConfig();
+  return { directory: config.notesDirectory || null };
+});
+
+ipcMain.handle('notes:set-directory', async (event, directory) => {
+  try {
+    const config = loadConfig();
+    config.notesDirectory = directory;
+    if (saveConfig(config)) {
+      return { success: true };
+    }
+    return { error: 'Failed to save directory path' };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('notes:select-directory', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: 'Select Directory for Notes'
+    });
+    
+    if (!result.canceled && result.filePaths.length > 0) {
+      return { directory: result.filePaths[0] };
+    }
+    return { directory: null };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('notes:list-directory', async (event, directory) => {
+  try {
+    if (!directory || !fs.existsSync(directory)) {
+      return { items: [] };
+    }
+    
+    const items = [];
+    const entries = fs.readdirSync(directory, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      const fullPath = path.join(directory, entry.name);
+      const stats = fs.statSync(fullPath);
+      
+      if (entry.isDirectory()) {
+        items.push({
+          name: entry.name,
+          path: fullPath,
+          type: 'directory',
+          modified: stats.mtime.toISOString()
+        });
+      } else if (entry.isFile() && (entry.name.endsWith('.md') || entry.name.endsWith('.txt') || entry.name.endsWith('.note'))) {
+        items.push({
+          name: entry.name,
+          path: fullPath,
+          type: 'file',
+          modified: stats.mtime.toISOString(),
+          size: stats.size
+        });
+      }
+    }
+    
+    // Sort: directories first, then files, both alphabetically
+    items.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'directory' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    
+    return { items };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('notes:read-file', async (event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { error: 'File not found' };
+    }
+    
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return { content };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('notes:write-file', async (event, filePath, content) => {
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('notes:delete-file', async (event, filePath) => {
+  try {
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      if (stats.isDirectory()) {
+        fs.rmSync(filePath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(filePath);
+      }
+      return { success: true };
+    }
+    return { error: 'File not found' };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
+ipcMain.handle('notes:create-directory', async (event, dirPath) => {
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+      return { success: true };
+    }
+    return { error: 'Directory already exists' };
+  } catch (error) {
+    return { error: error.message };
+  }
+});
+
 // Stash IPC handlers
 ipcMain.handle('git:list-stashes', async () => {
   if (!git) {

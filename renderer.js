@@ -195,6 +195,8 @@ document.querySelectorAll('.tab-button').forEach(button => {
             setupCreateBranchButton();
         } else if (tabName === 'diagraming') {
             initializeDiagramEditor();
+        } else if (tabName === 'notes') {
+            initializeNotesEditor();
         } else if (tabName === 'settings') {
             loadSettings();
         }
@@ -895,6 +897,13 @@ async function loadSettings() {
     const mainBranchInput = document.getElementById('settings-main-branch');
     if (mainBranchInput && mainBranchResult.branch) {
         mainBranchInput.value = mainBranchResult.branch;
+    }
+    
+    // Load notes directory
+    const notesDirResult = await ipcRenderer.invoke('notes:get-directory');
+    const notesDirectoryInput = document.getElementById('settings-notes-directory');
+    if (notesDirectoryInput && notesDirResult.directory) {
+        notesDirectoryInput.value = notesDirResult.directory;
     }
 }
 
@@ -2291,6 +2300,56 @@ document.getElementById('settings-save-main-branch').addEventListener('click', a
     }
 });
 
+// Select notes directory
+document.getElementById('settings-select-notes-directory').addEventListener('click', async () => {
+    try {
+        const result = await ipcRenderer.invoke('notes:select-directory');
+        if (result.error) {
+            await showAlert('Error', `Error selecting directory: ${result.error}`);
+        } else if (result.directory) {
+            const notesDirectoryInput = document.getElementById('settings-notes-directory');
+            if (notesDirectoryInput) {
+                notesDirectoryInput.value = result.directory;
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
+// Save notes directory
+document.getElementById('settings-save-notes-directory').addEventListener('click', async () => {
+    const directory = document.getElementById('settings-notes-directory').value;
+    if (!directory) {
+        const statusDiv = document.getElementById('settings-notes-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<div class="error">❌ Please select a directory first</div>';
+        }
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('notes:set-directory', directory);
+        const statusDiv = document.getElementById('settings-notes-status');
+        if (result.success) {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="success">✓ Notes directory saved successfully</div>';
+            }
+            // Refresh notes tree if we're on the notes tab
+            if (document.getElementById('notes-tab') && document.getElementById('notes-tab').classList.contains('active')) {
+                notesDirectory = directory;
+                await loadNotesDirectoryTree(directory);
+            }
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error || 'Failed to save directory'}</div>`;
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
 // Git tab inner buttons
 document.querySelectorAll('.git-tab-button').forEach(button => {
     button.addEventListener('click', () => {
@@ -2587,6 +2646,42 @@ if (!setupContextMenuHandler()) {
 
 if (!setupCommitContextMenuHandler()) {
     setTimeout(() => setupCommitContextMenuHandler(), 100);
+}
+
+// Set up notes context menu handlers
+function setupNotesContextMenuHandler() {
+    const contextMenu = document.getElementById('notes-context-menu');
+    if (!contextMenu) return false;
+    
+    // Create note handler
+    const contextCreateNote = document.getElementById('context-create-note');
+    if (contextCreateNote) {
+        contextCreateNote.onclick = async (e) => {
+            const targetPath = contextMenu.dataset.targetPath;
+            if (targetPath) {
+                await createNewNote(targetPath);
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
+    // Create folder handler
+    const contextCreateFolder = document.getElementById('context-create-folder');
+    if (contextCreateFolder) {
+        contextCreateFolder.onclick = async (e) => {
+            const targetPath = contextMenu.dataset.targetPath;
+            if (targetPath) {
+                await createNewFolder(targetPath);
+                contextMenu.style.display = 'none';
+            }
+        };
+    }
+    
+    return true;
+}
+
+if (!setupNotesContextMenuHandler()) {
+    setTimeout(() => setupNotesContextMenuHandler(), 100);
 }
 
 // Diagram Editor Functions
@@ -3080,6 +3175,461 @@ async function createStash() {
     } catch (error) {
         await showAlert('Error', `Error: ${error.message}`);
         addGitMessage('Stash Create Error', error.message, 'error');
+    }
+}
+
+// Notes Editor Functions
+let currentNotePath = null;
+let notesDirectory = null;
+
+async function initializeNotesEditor() {
+    // Load notes directory
+    const result = await ipcRenderer.invoke('notes:get-directory');
+    notesDirectory = result.directory;
+    
+    if (notesDirectory) {
+        await loadNotesDirectoryTree(notesDirectory);
+    } else {
+        const treeContainer = document.getElementById('notes-directory-tree');
+        if (treeContainer) {
+            treeContainer.innerHTML = '<p class="placeholder" style="font-size: 12px; padding: 12px;">Configure notes directory in Settings</p>';
+        }
+    }
+    
+    // Set up event listeners
+    const newNoteBtn = document.getElementById('new-note-btn');
+    const saveNoteBtn = document.getElementById('save-note-btn');
+    const deleteNoteBtn = document.getElementById('delete-note-btn');
+    const refreshTreeBtn = document.getElementById('refresh-notes-tree');
+    const notesEditor = document.getElementById('notes-editor');
+    
+    if (newNoteBtn) {
+        newNoteBtn.addEventListener('click', async () => {
+            await createNewNote();
+        });
+    }
+    
+    if (saveNoteBtn) {
+        saveNoteBtn.addEventListener('click', async () => {
+            await saveCurrentNote();
+        });
+    }
+    
+    if (deleteNoteBtn) {
+        deleteNoteBtn.addEventListener('click', async () => {
+            await deleteCurrentNote();
+        });
+    }
+    
+    if (refreshTreeBtn) {
+        refreshTreeBtn.addEventListener('click', async () => {
+            if (notesDirectory) {
+                await loadNotesDirectoryTree(notesDirectory);
+            }
+        });
+    }
+    
+    // Auto-save and preview update on editor change (debounced)
+    if (notesEditor) {
+        let saveTimeout;
+        let previewTimeout;
+        notesEditor.addEventListener('input', () => {
+            clearTimeout(saveTimeout);
+            clearTimeout(previewTimeout);
+            
+            // Update preview immediately (debounced for performance)
+            previewTimeout = setTimeout(() => {
+                updateMarkdownPreview();
+            }, 100);
+            
+            // Auto-save after 2 seconds of inactivity
+            saveTimeout = setTimeout(async () => {
+                if (currentNotePath) {
+                    await saveCurrentNote(true); // Silent save
+                }
+            }, 2000);
+        });
+        
+        // Initial preview update
+        updateMarkdownPreview();
+    }
+}
+
+function updateMarkdownPreview() {
+    const notesEditor = document.getElementById('notes-editor');
+    const notesPreview = document.getElementById('notes-preview');
+    
+    if (!notesEditor || !notesPreview) return;
+    
+    const markdown = notesEditor.value;
+    
+    if (!markdown.trim()) {
+        notesPreview.innerHTML = '<p class="placeholder">Start typing to see markdown preview</p>';
+        return;
+    }
+    
+    if (typeof marked === 'undefined') {
+        notesPreview.innerHTML = '<p class="error">Markdown library not loaded. Please refresh the page.</p>';
+        return;
+    }
+    
+    try {
+        // Configure marked options
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+        
+        const html = marked.parse(markdown);
+        notesPreview.innerHTML = html;
+        
+        // Re-initialize Mermaid diagrams if any are in the preview
+        if (typeof mermaid !== 'undefined' && mermaidInitialized) {
+            const mermaidElements = notesPreview.querySelectorAll('.mermaid');
+            if (mermaidElements.length > 0) {
+                mermaid.run({
+                    nodes: Array.from(mermaidElements)
+                }).catch(() => {
+                    // Silently fail if mermaid can't render
+                });
+            }
+        }
+    } catch (error) {
+        notesPreview.innerHTML = `<p class="error">Error rendering markdown: ${error.message}</p>`;
+    }
+}
+
+async function loadNotesDirectoryTree(directory, parentElement = null, level = 0) {
+    const treeContainer = parentElement || document.getElementById('notes-directory-tree');
+    if (!treeContainer) return;
+    
+    try {
+        const result = await ipcRenderer.invoke('notes:list-directory', directory);
+        
+        if (result.error) {
+            treeContainer.innerHTML = `<p class="error">Error loading directory: ${result.error}</p>`;
+            return;
+        }
+        
+        const items = result.items || [];
+        
+        if (items.length === 0 && level === 0) {
+            treeContainer.innerHTML = '<p class="placeholder" style="font-size: 12px; padding: 12px;">Directory is empty</p>';
+            return;
+        }
+        
+        if (level === 0) {
+            treeContainer.innerHTML = '';
+        }
+        
+        // Add right-click handler to the container (only for root level)
+        if (level === 0) {
+            // Remove any existing handler to avoid duplicates
+            const existingHandler = treeContainer.dataset.hasContextMenu;
+            if (!existingHandler) {
+                treeContainer.addEventListener('contextmenu', (e) => {
+                    // Only show menu if clicking on empty space, not on items
+                    if (e.target === treeContainer || e.target.classList.contains('placeholder')) {
+                        e.preventDefault();
+                        showNotesContextMenu(e, directory, 'directory');
+                    }
+                });
+                treeContainer.dataset.hasContextMenu = 'true';
+            }
+        }
+        
+        items.forEach(item => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = `notes-tree-item notes-tree-${item.type}`;
+            itemDiv.dataset.path = item.path;
+            itemDiv.dataset.type = item.type;
+            itemDiv.style.paddingLeft = `${level * 16 + 8}px`;
+            
+            const icon = item.type === 'directory' ? '📁' : '📄';
+            itemDiv.innerHTML = `
+                <span class="notes-tree-icon">${icon}</span>
+                <span class="notes-tree-name">${escapeHtml(item.name)}</span>
+                ${item.type === 'directory' ? '<span class="notes-tree-toggle">▼</span>' : ''}
+            `;
+            
+            if (item.type === 'directory') {
+                itemDiv.classList.add('notes-tree-folder');
+                itemDiv.style.cursor = 'pointer';
+                
+                // Toggle expand/collapse
+                itemDiv.addEventListener('click', async (e) => {
+                    if (e.target.classList.contains('notes-tree-toggle') || e.target.closest('.notes-tree-toggle')) {
+                        e.stopPropagation();
+                        const isExpanded = itemDiv.classList.contains('expanded');
+                        if (isExpanded) {
+                            // Collapse: remove children
+                            const children = itemDiv.querySelectorAll('.notes-tree-item');
+                            children.forEach(child => child.remove());
+                            itemDiv.classList.remove('expanded');
+                            itemDiv.querySelector('.notes-tree-toggle').textContent = '▼';
+                        } else {
+                            // Expand: load children
+                            const subContainer = document.createElement('div');
+                            subContainer.className = 'notes-tree-children';
+                            itemDiv.appendChild(subContainer);
+                            await loadNotesDirectoryTree(item.path, subContainer, level + 1);
+                            itemDiv.classList.add('expanded');
+                            itemDiv.querySelector('.notes-tree-toggle').textContent = '▲';
+                        }
+                    }
+                });
+                
+                // Right-click context menu for folders
+                itemDiv.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showNotesContextMenu(e, item.path, 'directory');
+                });
+            } else {
+                itemDiv.classList.add('notes-tree-file');
+                itemDiv.style.cursor = 'pointer';
+                
+                // Load file on click
+                itemDiv.addEventListener('click', async () => {
+                    await loadNote(item.path);
+                });
+                
+                // Right-click context menu for files
+                itemDiv.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showNotesContextMenu(e, path.dirname(item.path), 'file');
+                });
+            }
+            
+            treeContainer.appendChild(itemDiv);
+        });
+    } catch (error) {
+        if (level === 0) {
+            treeContainer.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+        }
+    }
+}
+
+async function loadNote(filePath) {
+    try {
+        const result = await ipcRenderer.invoke('notes:read-file', filePath);
+        if (result.error) {
+            await showAlert('Error', `Error loading note: ${result.error}`);
+        } else {
+            const notesEditor = document.getElementById('notes-editor');
+            const currentFileLabel = document.getElementById('notes-current-file');
+            
+            if (notesEditor) {
+                notesEditor.value = result.content;
+                // Update preview after loading
+                setTimeout(() => updateMarkdownPreview(), 100);
+            }
+            
+            if (currentFileLabel) {
+                currentFileLabel.textContent = path.basename(filePath);
+            }
+            
+            currentNotePath = filePath;
+            
+            // Highlight selected file in tree
+            document.querySelectorAll('.notes-tree-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            const fileItem = document.querySelector(`[data-path="${filePath}"]`);
+            if (fileItem) {
+                fileItem.classList.add('selected');
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+}
+
+async function saveCurrentNote(silent = false) {
+    if (!currentNotePath) {
+        if (!silent) {
+            await showAlert('Error', 'No file selected. Please create a new note or select an existing one.');
+        }
+        return;
+    }
+    
+    const notesEditor = document.getElementById('notes-editor');
+    if (!notesEditor) return;
+    
+    const content = notesEditor.value;
+    
+    try {
+        const result = await ipcRenderer.invoke('notes:write-file', currentNotePath, content);
+        if (result.error) {
+            if (!silent) {
+                await showAlert('Error', `Error saving note: ${result.error}`);
+            }
+        } else {
+            if (!silent) {
+                await showAlert('Success', 'Note saved successfully!');
+            }
+            // Refresh tree to update modified date
+            if (notesDirectory) {
+                await loadNotesDirectoryTree(notesDirectory);
+            }
+        }
+    } catch (error) {
+        if (!silent) {
+            await showAlert('Error', `Error: ${error.message}`);
+        }
+    }
+}
+
+function showNotesContextMenu(e, targetPath, itemType) {
+    const contextMenu = document.getElementById('notes-context-menu');
+    if (!contextMenu) return;
+    
+    // Store target path in the context menu
+    contextMenu.dataset.targetPath = targetPath;
+    contextMenu.dataset.itemType = itemType;
+    
+    // Position the menu at cursor
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = `${e.pageX}px`;
+    contextMenu.style.top = `${e.pageY}px`;
+    
+    // Hide menu when clicking elsewhere
+    const hideMenu = (event) => {
+        if (!contextMenu.contains(event.target)) {
+            contextMenu.style.display = 'none';
+            document.removeEventListener('click', hideMenu);
+        }
+    };
+    
+    setTimeout(() => {
+        document.addEventListener('click', hideMenu);
+    }, 10);
+}
+
+async function createNewNote(targetDirectory = null) {
+    const directory = targetDirectory || notesDirectory;
+    
+    if (!directory) {
+        await showAlert('Error', 'Please configure a notes directory in Settings first.');
+        return;
+    }
+    
+    const fileName = await showPrompt('New Note', 'Enter a name for the note (e.g., "my-note.md"):', 'new-note.md');
+    if (!fileName) return;
+    
+    // Ensure it has an extension
+    let finalFileName = fileName;
+    if (!fileName.match(/\.(md|txt|note)$/i)) {
+        finalFileName = fileName + '.md';
+    }
+    
+    const filePath = path.join(directory, finalFileName);
+    
+    // Check if file exists
+    try {
+        const checkResult = await ipcRenderer.invoke('notes:read-file', filePath);
+        if (!checkResult.error) {
+            const overwrite = await showConfirm('File Exists', `File "${finalFileName}" already exists. Overwrite?`);
+            if (!overwrite) return;
+        }
+    } catch (error) {
+        // File doesn't exist, that's fine
+    }
+    
+    // Create empty file
+    const result = await ipcRenderer.invoke('notes:write-file', filePath, '');
+    if (result.error) {
+        await showAlert('Error', `Error creating note: ${result.error}`);
+    } else {
+        currentNotePath = filePath;
+        const notesEditor = document.getElementById('notes-editor');
+        const currentFileLabel = document.getElementById('notes-current-file');
+        
+        if (notesEditor) {
+            notesEditor.value = '';
+            updateMarkdownPreview();
+        }
+        
+        if (currentFileLabel) {
+            currentFileLabel.textContent = finalFileName;
+        }
+        
+        // Refresh tree and load the new file
+        await loadNotesDirectoryTree(notesDirectory);
+        await loadNote(filePath);
+    }
+}
+
+async function createNewFolder(targetDirectory = null) {
+    const directory = targetDirectory || notesDirectory;
+    
+    if (!directory) {
+        await showAlert('Error', 'Please configure a notes directory in Settings first.');
+        return;
+    }
+    
+    const folderName = await showPrompt('New Folder', 'Enter a name for the folder:', 'new-folder');
+    if (!folderName) return;
+    
+    const folderPath = path.join(directory, folderName);
+    
+    // Check if folder exists
+    try {
+        const checkResult = await ipcRenderer.invoke('notes:list-directory', folderPath);
+        if (!checkResult.error) {
+            const overwrite = await showConfirm('Folder Exists', `Folder "${folderName}" already exists. Continue?`);
+            if (!overwrite) return;
+        }
+    } catch (error) {
+        // Folder doesn't exist, that's fine
+    }
+    
+    // Create folder
+    const result = await ipcRenderer.invoke('notes:create-directory', folderPath);
+    if (result.error) {
+        await showAlert('Error', `Error creating folder: ${result.error}`);
+    } else {
+        await showAlert('Success', 'Folder created successfully!');
+        // Refresh tree
+        await loadNotesDirectoryTree(notesDirectory);
+    }
+}
+
+async function deleteCurrentNote() {
+    if (!currentNotePath) {
+        await showAlert('Error', 'No file selected.');
+        return;
+    }
+    
+    const fileName = path.basename(currentNotePath);
+    const confirmed = await showConfirm('Delete Note', `Are you sure you want to delete "${fileName}"?`);
+    if (!confirmed) return;
+    
+    try {
+        const result = await ipcRenderer.invoke('notes:delete-file', currentNotePath);
+        if (result.error) {
+            await showAlert('Error', `Error deleting note: ${result.error}`);
+        } else {
+            await showAlert('Success', 'Note deleted successfully!');
+            currentNotePath = null;
+            const notesEditor = document.getElementById('notes-editor');
+            const currentFileLabel = document.getElementById('notes-current-file');
+            
+            if (notesEditor) {
+                notesEditor.value = '';
+                updateMarkdownPreview();
+            }
+            
+            if (currentFileLabel) {
+                currentFileLabel.textContent = 'No file selected';
+            }
+            
+            // Refresh tree
+            if (notesDirectory) {
+                await loadNotesDirectoryTree(notesDirectory);
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
     }
 }
 

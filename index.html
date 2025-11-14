@@ -6,6 +6,7 @@
     <title>Andrew's Hacky Dev Tool</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -17,6 +18,7 @@
             <button class="tab-button active" data-tab="docker">Docker Containers</button>
             <button class="tab-button" data-tab="git">Git Management</button>
             <button class="tab-button" data-tab="diagraming">Diagraming</button>
+            <button class="tab-button" data-tab="notes">Notes</button>
             <button class="tab-button" data-tab="settings">Settings</button>
         </div>
 
@@ -186,6 +188,43 @@
             </div>
         </div>
 
+        <!-- Notes Tab -->
+        <div id="notes-tab" class="tab-content">
+            <div class="notes-container">
+                <div class="notes-sidebar">
+                    <div class="notes-sidebar-header">
+                        <h2>Notes Directory</h2>
+                        <button id="refresh-notes-tree" class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px;">🔄 Refresh</button>
+                    </div>
+                    <div id="notes-directory-tree" class="notes-directory-tree">
+                        <p class="placeholder" style="font-size: 12px; padding: 12px;">Configure notes directory in Settings</p>
+                    </div>
+                </div>
+                <div class="notes-editor-panel">
+                    <div class="notes-editor-header">
+                        <h2 id="notes-current-file">No file selected</h2>
+                        <div class="notes-editor-controls">
+                            <button id="new-note-btn" class="btn btn-primary">📄 New Note</button>
+                            <button id="save-note-btn" class="btn btn-success">💾 Save</button>
+                            <button id="delete-note-btn" class="btn btn-danger">🗑 Delete</button>
+                        </div>
+                    </div>
+                    <div class="notes-editor-split">
+                        <div class="notes-editor-left">
+                            <div class="notes-editor-label">Editor</div>
+                            <textarea id="notes-editor" class="notes-editor" placeholder="Select a note from the directory tree or create a new one...&#10;&#10;Markdown is supported and will be rendered in the preview pane."></textarea>
+                        </div>
+                        <div class="notes-editor-right">
+                            <div class="notes-editor-label">Preview</div>
+                            <div id="notes-preview" class="notes-preview">
+                                <p class="placeholder">Start typing to see markdown preview</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Settings Tab -->
         <div id="settings-tab" class="tab-content">
             <div class="settings-container">
@@ -234,6 +273,22 @@
                 </div>
                 
                 <div class="settings-section" style="margin-top: 30px;">
+                    <h3>Notes Directory</h3>
+                    <div class="settings-item">
+                        <label for="settings-notes-directory">Directory Path:</label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="settings-notes-directory" class="settings-input" placeholder="Select directory for notes..." readonly style="flex: 1;">
+                            <button id="settings-select-notes-directory" class="btn btn-secondary">📁 Select Directory</button>
+                        </div>
+                        <p class="settings-hint">Directory where note files will be saved and loaded from</p>
+                        <div id="settings-notes-status" class="settings-status"></div>
+                    </div>
+                    <div class="settings-footer">
+                        <button id="settings-save-notes-directory" class="btn btn-primary">Save Notes Directory</button>
+                    </div>
+                </div>
+                
+                <div class="settings-section" style="margin-top: 30px;">
                     <h3>Main Branch</h3>
                     <div class="settings-item">
                         <label for="settings-main-branch">Branch Name:</label>
@@ -274,6 +329,12 @@
         <div class="context-menu-item" id="context-reset-soft">🔄 Reset (Soft)</div>
         <div class="context-menu-item" id="context-reset-mixed">🔄 Reset (Mixed)</div>
         <div class="context-menu-item" id="context-reset-hard">⚠️ Reset (Hard)</div>
+    </div>
+
+    <!-- Context Menu for Notes Tree -->
+    <div id="notes-context-menu" class="context-menu" style="display: none;">
+        <div class="context-menu-item" id="context-create-note">📄 Create Note</div>
+        <div class="context-menu-item" id="context-create-folder">📁 Create Folder</div>
     </div>
 
     <!-- Diff Modal -->
