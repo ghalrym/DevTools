@@ -658,7 +658,7 @@ ipcMain.handle('git:rebase-branch', async (event, branchToRebase, ontoBranch) =>
   }
 
   try {
-    // First, checkout the branch we want to rebase
+    // First, checkout the branch we want to rebase (should already be checked out, but ensure it)
     await git.checkout(branchToRebase);
     
     // Then rebase it onto the target branch

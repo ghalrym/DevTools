@@ -1253,7 +1253,7 @@ async function rebaseBranch(branchName) {
     
     const confirmed = await showConfirm(
         'Rebase Branch',
-        `Rebase branch "${branchName}" onto "${currentBranch}"?\n\nThis will checkout "${branchName}" and rebase it onto "${currentBranch}".`
+        `Rebase current branch "${currentBranch}" onto "${branchName}"?\n\nThis will rebase "${currentBranch}" onto "${branchName}".`
     );
     
     if (!confirmed) {
@@ -1261,15 +1261,15 @@ async function rebaseBranch(branchName) {
     }
     
     try {
-        const result = await ipcRenderer.invoke('git:rebase-branch', branchName, currentBranch);
+        const result = await ipcRenderer.invoke('git:rebase-branch', currentBranch, branchName);
         
         if (result.error) {
             await showAlert('Error', `Error rebasing branch: ${result.error}`);
         } else {
             await loadBranches();
             await loadCommitFiles();
-            await loadGitLogs(branchName);
-            await showAlert('Success', `Branch "${branchName}" has been rebased onto "${currentBranch}"!`);
+            await loadGitLogs(currentBranch);
+            await showAlert('Success', `Branch "${currentBranch}" has been rebased onto "${branchName}"!`);
         }
     } catch (error) {
         await showAlert('Error', `Error: ${error.message}`);
