@@ -635,3 +635,16 @@ ipcMain.handle('config:set-git-repo-path', async (event, repoPath) => {
   return { success, path: repoPath };
 });
 
+ipcMain.handle('config:get-commit-template', async () => {
+  const config = loadConfig();
+  const template = config.commitTemplate || '';
+  return { template };
+});
+
+ipcMain.handle('config:set-commit-template', async (event, template) => {
+  const config = loadConfig();
+  config.commitTemplate = template;
+  const success = saveConfig(config);
+  return { success, template };
+});
+

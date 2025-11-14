@@ -126,6 +126,19 @@
                         <button id="settings-save-repo" class="btn btn-primary">Save Repository</button>
                     </div>
                 </div>
+                
+                <div class="settings-section" style="margin-top: 30px;">
+                    <h3>Commit Template</h3>
+                    <div class="settings-item">
+                        <label for="settings-commit-template">Commit Message Template:</label>
+                        <textarea id="settings-commit-template" class="settings-textarea" placeholder="Enter your commit message template (e.g., [Type]: Description&#10;&#10;Details...)"></textarea>
+                        <p class="settings-hint">This template will be pre-filled in the commit message field. Use {branch} to include the current branch name.</p>
+                        <div id="settings-template-status" class="settings-status"></div>
+                    </div>
+                    <div class="settings-footer">
+                        <button id="settings-save-template" class="btn btn-primary">Save Template</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

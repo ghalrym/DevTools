@@ -867,6 +867,26 @@ header h1 {
     border-left-color: #666;
 }
 
+.settings-textarea {
+    width: 100%;
+    padding: 10px;
+    background: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    color: #e0e0e0;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 100px;
+    margin-bottom: 10px;
+}
+
+.settings-textarea:focus {
+    border-color: #4a9eff;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
 /* Modal Styles */
 .modal-overlay {
     position: fixed;

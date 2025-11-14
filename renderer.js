@@ -185,6 +185,11 @@ document.querySelectorAll('.tab-button').forEach(button => {
             // Always try to load, let the functions handle errors gracefully
             loadBranches();
             loadCommitFiles();
+            // Apply commit template if commit tab is active
+            const commitTab = document.getElementById('git-commit-tab');
+            if (commitTab && commitTab.classList.contains('active')) {
+                applyCommitTemplate();
+            }
             // Re-setup the create branch button in case it was recreated
             setupCreateBranchButton();
         } else if (tabName === 'settings') {
@@ -849,6 +854,17 @@ async function setRepository(repoPath = null) {
 }
 
 async function loadSettings() {
+    // Load commit template
+    try {
+        const templateResult = await ipcRenderer.invoke('config:get-commit-template');
+        const templateInput = document.getElementById('settings-commit-template');
+        if (templateInput && templateResult.template) {
+            templateInput.value = templateResult.template;
+        }
+    } catch (error) {
+        // Silently fail if template can't be loaded
+    }
+    
     // Load saved repository path from config file via IPC
     const saved = await ipcRenderer.invoke('config:get-git-repo-path');
     const savedRepoPath = saved.path;
@@ -1531,6 +1547,36 @@ async function loadCommitFiles() {
     }
 }
 
+async function applyCommitTemplate() {
+    const messageField = document.getElementById('commit-message');
+    if (!messageField) return;
+    
+    // Only apply template if field is empty
+    if (messageField.value.trim() !== '') return;
+    
+    try {
+        const templateResult = await ipcRenderer.invoke('config:get-commit-template');
+        if (templateResult.template && templateResult.template.trim() !== '') {
+            let template = templateResult.template;
+            
+            // Replace {branch} placeholder with current branch name
+            try {
+                const statusResult = await ipcRenderer.invoke('git:get-status');
+                if (statusResult.status && statusResult.status.current) {
+                    template = template.replace(/{branch}/g, statusResult.status.current);
+                }
+            } catch (e) {
+                // If we can't get branch, just remove the placeholder
+                template = template.replace(/{branch}/g, '');
+            }
+            
+            messageField.value = template;
+        }
+    } catch (error) {
+        // Silently fail if template can't be loaded
+    }
+}
+
 async function commitChanges() {
     const message = document.getElementById('commit-message');
     const commitResult = document.getElementById('commit-result');
@@ -1790,6 +1836,41 @@ document.getElementById('settings-save-repo').addEventListener('click', async ()
         button.style.background = '';
     }, 2000);
 });
+
+// Save commit template
+document.getElementById('settings-save-template').addEventListener('click', async () => {
+    const textarea = document.getElementById('settings-commit-template');
+    const template = textarea.value;
+    
+    try {
+        const saveResult = await ipcRenderer.invoke('config:set-commit-template', template);
+        
+        if (!saveResult || !saveResult.success) {
+            await showAlert('Error', 'Failed to save commit template!');
+            return;
+        }
+        
+        // Show success feedback
+        const button = document.getElementById('settings-save-template');
+        const statusDiv = document.getElementById('settings-template-status');
+        const originalText = button.textContent;
+        button.textContent = '✓ Saved!';
+        button.style.background = '#2d5a2d';
+        if (statusDiv) {
+            statusDiv.innerHTML = '<p class="success">Template saved successfully!</p>';
+        }
+        setTimeout(() => {
+            button.textContent = originalText;
+            button.style.background = '';
+            if (statusDiv) {
+                statusDiv.innerHTML = '';
+            }
+        }, 2000);
+    } catch (error) {
+        await showAlert('Error', 'Error saving commit template: ' + error.message);
+    }
+});
+
 // Git tab inner buttons
 document.querySelectorAll('.git-tab-button').forEach(button => {
     button.addEventListener('click', () => {
@@ -1810,6 +1891,8 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
         } else if (tabName === 'commit') {
             // Load staged/unstaged files for commit tab
             loadCommitFiles();
+            // Apply commit template if available
+            applyCommitTemplate();
         }
     });
 });
