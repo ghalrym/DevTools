@@ -933,6 +933,7 @@ function attachFileActionListeners() {
                 alert(`Error: ${result.error}`);
             } else {
                 await loadGitStatus();
+                await loadCommitFiles(); // Refresh commit tab file lists
             }
         });
     });
@@ -946,6 +947,7 @@ function attachFileActionListeners() {
                 alert(`Error: ${result.error}`);
             } else {
                 await loadGitStatus();
+                await loadCommitFiles(); // Refresh commit tab file lists
             }
         });
     });
@@ -1015,6 +1017,98 @@ async function loadGitLogs() {
     }
 }
 
+async function loadCommitFiles() {
+    const stagedFilesDiv = document.getElementById('commit-staged-files');
+    const unstagedFilesDiv = document.getElementById('commit-unstaged-files');
+    
+    if (!stagedFilesDiv || !unstagedFilesDiv) {
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('git:get-status');
+        
+        if (result.error) {
+            stagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">Error loading files</p>';
+            unstagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">Error loading files</p>';
+            return;
+        }
+        
+        const status = result.status;
+        const files = status.files || [];
+        
+        // Separate staged and unstaged files
+        const staged = files.filter(f => f.index !== ' ' && f.index !== '?');
+        const unstaged = files.filter(f => {
+            // Unstaged: modified, untracked, or deleted in working directory
+            return (f.working_dir === 'M' || f.working_dir === '?' || f.working_dir === 'D') && 
+                   (f.index === ' ' || f.index === '?');
+        });
+        
+        // Display staged files
+        if (staged.length > 0) {
+            stagedFilesDiv.innerHTML = staged.map(file => {
+                const statusIcon = file.index === 'A' ? '📄' : file.index === 'M' ? '✏️' : file.index === 'D' ? '🗑️' : '📝';
+                return `<div style="padding: 4px 8px; margin: 2px 0; background: rgba(74, 158, 255, 0.1); border-left: 2px solid #4a9eff; font-size: 12px;">${statusIcon} ${file.path}</div>`;
+            }).join('');
+        } else {
+            stagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">No staged files</p>';
+        }
+        
+        // Display unstaged files
+        if (unstaged.length > 0) {
+            unstagedFilesDiv.innerHTML = unstaged.map(file => {
+                let statusIcon = '📝';
+                if (file.working_dir === 'M') statusIcon = '✏️';
+                else if (file.working_dir === '?') statusIcon = '📄';
+                else if (file.working_dir === 'D') statusIcon = '🗑️';
+                
+                return `<div style="padding: 4px 8px; margin: 2px 0; background: rgba(255, 255, 127, 0.1); border-left: 2px solid #ffff7f; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>${statusIcon} ${file.path}</span>
+                    <button class="btn btn-small btn-primary stage-file-from-commit" data-file="${file.path}" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;">Stage</button>
+                </div>`;
+            }).join('');
+            
+            // Attach event listeners to stage buttons
+            unstagedFilesDiv.querySelectorAll('.stage-file-from-commit').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const filePath = e.target.dataset.file;
+                    const button = e.target;
+                    button.disabled = true;
+                    button.textContent = 'Staging...';
+                    
+                    try {
+                        const result = await ipcRenderer.invoke('git:stage-file', filePath);
+                        
+                        if (result.error) {
+                            alert(`Error: ${result.error}`);
+                            button.disabled = false;
+                            button.textContent = 'Stage';
+                        } else {
+                            // Refresh both lists
+                            await loadGitStatus();
+                            await loadCommitFiles();
+                        }
+                    } catch (error) {
+                        console.error('Error staging file:', error);
+                        alert(`Error: ${error.message}`);
+                        button.disabled = false;
+                        button.textContent = 'Stage';
+                    }
+                });
+            });
+        } else {
+            unstagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">No unstaged files</p>';
+        }
+        
+    } catch (error) {
+        console.error('Error loading commit files:', error);
+        stagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">Error loading files</p>';
+        unstagedFilesDiv.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">Error loading files</p>';
+    }
+}
+
 async function commitChanges() {
     const message = document.getElementById('commit-message');
     const commitResult = document.getElementById('commit-result');
@@ -1067,6 +1161,7 @@ async function commitChanges() {
         message.value = '';
         await loadGitStatus();
         await loadBranches();
+        await loadCommitFiles(); // Refresh file lists after commit
     } catch (error) {
         console.error('Error committing:', error);
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
@@ -1134,6 +1229,7 @@ async function commitAndPush() {
         message.value = '';
         await loadGitStatus();
         await loadBranches();
+        await loadCommitFiles(); // Refresh file lists after commit
     } catch (error) {
         console.error('Error committing and pushing:', error);
         commitResult.innerHTML = `<p class="error">Error: ${error.message}</p>`;
@@ -1242,6 +1338,8 @@ document.querySelectorAll('.git-tab-button').forEach(button => {
         } else if (tabName === 'commit') {
             // Ensure status is loaded for commit tab
             loadGitStatus();
+            // Load staged/unstaged files for commit tab
+            loadCommitFiles();
         }
     });
 });

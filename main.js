@@ -342,7 +342,21 @@ ipcMain.handle('git:stage-file', async (event, filePath) => {
   try {
     await git.add(filePath);
     const status = await git.status();
-    return { success: true, status };
+    // Return only serializable data
+    return { 
+      success: true, 
+      status: {
+        current: status.current,
+        tracking: status.tracking,
+        ahead: status.ahead,
+        behind: status.behind,
+        files: status.files ? status.files.map(f => ({
+          path: f.path,
+          index: f.index,
+          working_dir: f.working_dir
+        })) : []
+      }
+    };
   } catch (error) {
     return { error: error.message };
   }
@@ -356,7 +370,21 @@ ipcMain.handle('git:unstage-file', async (event, filePath) => {
   try {
     await git.reset(['HEAD', filePath]);
     const status = await git.status();
-    return { success: true, status };
+    // Return only serializable data
+    return { 
+      success: true, 
+      status: {
+        current: status.current,
+        tracking: status.tracking,
+        ahead: status.ahead,
+        behind: status.behind,
+        files: status.files ? status.files.map(f => ({
+          path: f.path,
+          index: f.index,
+          working_dir: f.working_dir
+        })) : []
+      }
+    };
   } catch (error) {
     return { error: error.message };
   }
@@ -370,7 +398,21 @@ ipcMain.handle('git:stage-all', async () => {
   try {
     await git.add('.');
     const status = await git.status();
-    return { success: true, status };
+    // Return only serializable data
+    return { 
+      success: true, 
+      status: {
+        current: status.current,
+        tracking: status.tracking,
+        ahead: status.ahead,
+        behind: status.behind,
+        files: status.files ? status.files.map(f => ({
+          path: f.path,
+          index: f.index,
+          working_dir: f.working_dir
+        })) : []
+      }
+    };
   } catch (error) {
     return { error: error.message };
   }
