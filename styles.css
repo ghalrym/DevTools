@@ -1042,3 +1042,37 @@ header h1 {
     opacity: 1;
 }
 
+.branch-search-container {
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid #333;
+}
+
+.branch-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+    outline: none;
+}
+
+.branch-search-input:focus {
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+.branch-search-input::placeholder {
+    color: #666;
+}
+
+.no-results-message {
+    padding: 12px;
+    text-align: center;
+    color: #888;
+    font-size: 12px;
+    font-style: italic;
+}
+

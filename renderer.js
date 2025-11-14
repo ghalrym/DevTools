@@ -823,9 +823,22 @@ async function loadBranches() {
         remoteGroup.className = 'branch-group';
         remoteGroup.innerHTML = '<div class="branch-group-header">🌐 Server</div>';
         
+        // Add search bar for remote branches
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'branch-search-container';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'branch-search-input';
+        searchInput.placeholder = 'Search server branches...';
+        searchInput.id = 'remote-branch-search';
+        searchContainer.appendChild(searchInput);
+        remoteGroup.appendChild(searchContainer);
+        
         const remoteList = document.createElement('div');
         remoteList.className = 'branch-group-list';
+        remoteList.id = 'remote-branches-list';
         
+        // Store original branches for filtering
         remoteBranches.forEach(branch => {
             const item = document.createElement('div');
             item.className = 'branch-item branch-item-remote';
@@ -841,6 +854,35 @@ async function loadBranches() {
             item.addEventListener('click', () => checkoutRemoteBranch(branch.fullName, branch.name));
             
             remoteList.appendChild(item);
+        });
+        
+        // Add search functionality
+        searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            const items = remoteList.querySelectorAll('.branch-item-remote');
+            
+            items.forEach(item => {
+                const branchName = item.dataset.branchName.toLowerCase();
+                if (branchName.includes(searchTerm)) {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            // Show message if no results
+            const visibleItems = Array.from(items).filter(item => item.style.display !== 'none');
+            let noResultsMsg = remoteList.querySelector('.no-results-message');
+            if (visibleItems.length === 0 && searchTerm !== '') {
+                if (!noResultsMsg) {
+                    noResultsMsg = document.createElement('div');
+                    noResultsMsg.className = 'no-results-message';
+                    noResultsMsg.textContent = 'No branches found';
+                    remoteList.appendChild(noResultsMsg);
+                }
+            } else if (noResultsMsg) {
+                noResultsMsg.remove();
+            }
         });
         
         remoteGroup.appendChild(remoteList);
