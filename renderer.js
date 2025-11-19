@@ -214,6 +214,15 @@ let displayedLineCount = 0;
 let isInitialLoad = true;
 let lastLogContent = '';
 let lastLogContentBeforeClear = '';
+let lastRenderedLogHtml = '';
+let logSearchTerm = '';
+let logSearchMatchCount = 0;
+let logSearchCurrentIndex = -1;
+
+const initialLogOutputElement = document.getElementById('container-logs');
+if (initialLogOutputElement) {
+    lastRenderedLogHtml = initialLogOutputElement.innerHTML;
+}
 
 function startFollowingLogs() {
     if (!selectedContainerId) return;
@@ -232,6 +241,157 @@ function stopFollowingLogs() {
         clearInterval(logFollowInterval);
         logFollowInterval = null;
     }
+}
+
+function renderLogContent(content = '', options = {}) {
+    const logOutput = document.getElementById('container-logs');
+    if (!logOutput) return;
+    
+    const { scrollToBottom = false, preserveScroll = false, scrollToActiveMatch = false } = options;
+    let previousScrollOffset = 0;
+    
+    if (preserveScroll) {
+        previousScrollOffset = logOutput.scrollHeight - logOutput.scrollTop;
+    }
+    
+    lastRenderedLogHtml = content ?? '';
+    const highlightedContent = applyLogSearchHighlight(lastRenderedLogHtml);
+    logOutput.innerHTML = highlightedContent;
+    updateLogSearchActiveHighlight();
+    
+    if (scrollToBottom) {
+        logOutput.scrollTop = logOutput.scrollHeight;
+    } else if (preserveScroll) {
+        const newScrollTop = Math.max(logOutput.scrollHeight - previousScrollOffset, 0);
+        logOutput.scrollTop = newScrollTop;
+    }
+    
+    if (scrollToActiveMatch) {
+        scrollToActiveLogMatch();
+    }
+}
+
+function applyLogSearchHighlight(content) {
+    const baseContent = content || '';
+    logSearchMatchCount = 0;
+    
+    if (!logSearchTerm) {
+        logSearchCurrentIndex = -1;
+        updateLogSearchStatus();
+        updateLogSearchControls();
+        return baseContent;
+    }
+    
+    const regex = new RegExp(`(${escapeRegExp(logSearchTerm)})`, 'gi');
+    const highlighted = baseContent.replace(regex, (match) => {
+        const wrapped = `<mark class="log-search-highlight" data-match-index="${logSearchMatchCount}">${match}</mark>`;
+        logSearchMatchCount += 1;
+        return wrapped;
+    });
+    
+    if (logSearchMatchCount === 0) {
+        logSearchCurrentIndex = -1;
+    } else {
+        if (logSearchCurrentIndex === -1) {
+            logSearchCurrentIndex = 0;
+        } else if (logSearchCurrentIndex >= logSearchMatchCount) {
+            logSearchCurrentIndex = logSearchMatchCount - 1;
+        }
+    }
+    
+    updateLogSearchStatus();
+    updateLogSearchControls();
+    return highlighted;
+}
+
+function updateLogSearchStatus() {
+    const statusElement = document.getElementById('log-search-count');
+    if (!statusElement) return;
+    
+    if (!logSearchTerm) {
+        statusElement.textContent = 'No search';
+        return;
+    }
+    
+    if (logSearchMatchCount === 0) {
+        statusElement.textContent = '0 matches';
+        return;
+    }
+    
+    const currentDisplay = Math.max(logSearchCurrentIndex, 0) + 1;
+    statusElement.textContent = `Match ${currentDisplay}/${logSearchMatchCount}`;
+}
+
+function updateLogSearchControls() {
+    const prevBtn = document.getElementById('log-search-prev');
+    const nextBtn = document.getElementById('log-search-next');
+    const hasMatches = Boolean(logSearchTerm) && logSearchMatchCount > 0;
+    
+    if (prevBtn) prevBtn.disabled = !hasMatches;
+    if (nextBtn) nextBtn.disabled = !hasMatches;
+}
+
+function updateLogSearchActiveHighlight() {
+    const logOutput = document.getElementById('container-logs');
+    if (!logOutput) return;
+    
+    const highlights = logOutput.querySelectorAll('.log-search-highlight');
+    highlights.forEach(el => el.classList.remove('log-search-highlight-active'));
+    
+    if (!logSearchTerm || logSearchMatchCount === 0) {
+        return;
+    }
+    
+    const targetIndex = Math.min(Math.max(logSearchCurrentIndex, 0), highlights.length - 1);
+    logSearchCurrentIndex = targetIndex;
+    const target = highlights[targetIndex];
+    if (target) {
+        target.classList.add('log-search-highlight-active');
+    }
+}
+
+function scrollToActiveLogMatch() {
+    if (!logSearchTerm || logSearchMatchCount === 0) return;
+    
+    const logOutput = document.getElementById('container-logs');
+    if (!logOutput) return;
+    
+    const highlights = logOutput.querySelectorAll('.log-search-highlight');
+    const target = highlights[logSearchCurrentIndex];
+    if (target && typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({
+            behavior: 'auto',
+            block: 'center'
+        });
+    }
+}
+
+function focusNextLogSearchMatch() {
+    if (!logSearchTerm || logSearchMatchCount === 0) return;
+    
+    logSearchCurrentIndex = (logSearchCurrentIndex + 1) % logSearchMatchCount;
+    renderLogContent(lastRenderedLogHtml, { preserveScroll: true, scrollToActiveMatch: true });
+}
+
+function focusPreviousLogSearchMatch() {
+    if (!logSearchTerm || logSearchMatchCount === 0) return;
+    
+    logSearchCurrentIndex = (logSearchCurrentIndex - 1 + logSearchMatchCount) % logSearchMatchCount;
+    renderLogContent(lastRenderedLogHtml, { preserveScroll: true, scrollToActiveMatch: true });
+}
+
+function handleLogSearchInput(event) {
+    logSearchTerm = event.target.value || '';
+    logSearchCurrentIndex = logSearchTerm ? 0 : -1;
+    renderLogContent(lastRenderedLogHtml, { preserveScroll: true, scrollToActiveMatch: true });
+}
+
+function clearLogSearch() {
+    logSearchTerm = '';
+    logSearchCurrentIndex = -1;
+    renderLogContent(lastRenderedLogHtml, { preserveScroll: true });
+    updateLogSearchStatus();
+    updateLogSearchControls();
 }
 
 function findLongestCommonPrefix(names) {
@@ -577,7 +737,8 @@ async function loadContainerLogs(forceReload = false) {
     const result = await ipcRenderer.invoke('docker:get-logs', selectedContainerId, tailLines);
     
     if (result.error) {
-        logOutput.innerHTML = `<p class="error">Error: ${result.error}</p>`;
+        const errorHtml = `<p class="error">Error: ${escapeHtml(result.error)}</p>`;
+        renderLogContent(errorHtml);
         previousLogLines = [];
         displayedLineCount = 0;
         lastLogContent = '';
@@ -592,12 +753,11 @@ async function loadContainerLogs(forceReload = false) {
     if (isInitialLoad || forceReload || displayedLineCount === 0) {
         // Initial load or force reload - replace all content
         const formattedContent = newLines.map(formatLogLine).join('\n');
-        logOutput.innerHTML = formattedContent;
+        renderLogContent(formattedContent, { scrollToBottom: true });
         displayedLineCount = newLines.length;
         previousLogLines = newLines;
         lastLogContent = result.logs;
         isInitialLoad = false;
-        logOutput.scrollTop = logOutput.scrollHeight;
     } else {
         // Incremental update - check for new content by comparing with previous
         const currentLogContent = result.logs;
@@ -626,14 +786,10 @@ async function loadContainerLogs(forceReload = false) {
                     
                     if (newContent) {
                         // Replace the "waiting for new logs" message with actual new content
-                        logOutput.innerHTML = newContent;
+                        renderLogContent(newContent, { scrollToBottom: wasAtBottom });
                         displayedLineCount = newContentLines.length;
                         previousLogLines = newContentLines;
                         lastLogContentBeforeClear = ''; // Reset clear flag
-                        
-                        if (wasAtBottom) {
-                            logOutput.scrollTop = logOutput.scrollHeight;
-                        }
                     } else {
                         // No new content yet, keep showing the placeholder
                         return;
@@ -665,17 +821,16 @@ async function loadContainerLogs(forceReload = false) {
                 
                 if (newContent) {
                     // Append new content without replacing existing
-                    const currentContent = logOutput.innerHTML;
-                    // Only add newline if current content doesn't end with one
-                    const separator = currentContent && !currentContent.endsWith('\n') && !currentContent.endsWith('<br>') && !currentContent.includes('waiting for new logs') ? '\n' : '';
-                    // Remove placeholder if it exists
-                    const contentToAppend = currentContent.includes('waiting for new logs') ? newContent : currentContent + separator + newContent;
-                    logOutput.innerHTML = contentToAppend;
+                    const currentContent = lastRenderedLogHtml || '';
+                    let updatedContent = newContent;
                     
-                    // Only auto-scroll if user was at bottom
-                    if (wasAtBottom) {
-                        logOutput.scrollTop = logOutput.scrollHeight;
+                    if (currentContent && !currentContent.includes('waiting for new logs')) {
+                        const needsSeparator = !currentContent.endsWith('\n') && !currentContent.endsWith('<br>');
+                        const separator = needsSeparator ? '\n' : '';
+                        updatedContent = currentContent + separator + newContent;
                     }
+                    
+                    renderLogContent(updatedContent, { scrollToBottom: wasAtBottom });
                 }
                 
                 displayedLineCount = newLines.length;
@@ -688,6 +843,10 @@ async function loadContainerLogs(forceReload = false) {
     }
 }
 
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -696,6 +855,35 @@ function escapeHtml(text) {
 
 // Event listeners for Docker
 document.getElementById('refresh-containers').addEventListener('click', loadContainers);
+
+const logSearchInputElement = document.getElementById('log-search-input');
+if (logSearchInputElement) {
+    logSearchInputElement.addEventListener('input', handleLogSearchInput);
+}
+
+const logSearchPrevButton = document.getElementById('log-search-prev');
+if (logSearchPrevButton) {
+    logSearchPrevButton.addEventListener('click', focusPreviousLogSearchMatch);
+}
+
+const logSearchNextButton = document.getElementById('log-search-next');
+if (logSearchNextButton) {
+    logSearchNextButton.addEventListener('click', focusNextLogSearchMatch);
+}
+
+const logSearchClearButton = document.getElementById('log-search-clear');
+if (logSearchClearButton) {
+    logSearchClearButton.addEventListener('click', () => {
+        if (logSearchInputElement) {
+            logSearchInputElement.value = '';
+            logSearchInputElement.focus();
+        }
+        clearLogSearch();
+    });
+}
+
+updateLogSearchStatus();
+updateLogSearchControls();
 
 document.getElementById('start-container').addEventListener('click', async () => {
     if (!selectedContainerId) {
@@ -797,8 +985,7 @@ document.getElementById('restart-container').addEventListener('click', async () 
 });
 
 document.getElementById('clear-logs').addEventListener('click', () => {
-    const logOutput = document.getElementById('container-logs');
-    logOutput.innerHTML = '<p class="placeholder">Logs cleared - waiting for new logs...</p>';
+    renderLogContent('<p class="placeholder">Logs cleared - waiting for new logs...</p>');
     
     // Save the last log content before clearing so we can detect new logs
     lastLogContentBeforeClear = lastLogContent;
@@ -911,6 +1098,44 @@ async function loadSettings() {
     const tabSizeInput = document.getElementById('settings-tab-size');
     if (tabSizeInput && tabSizeResult.tabSize) {
         tabSizeInput.value = tabSizeResult.tabSize;
+    }
+    
+    // Load MCP server status
+    await updateMCPStatus();
+}
+
+async function updateMCPStatus() {
+    try {
+        const status = await ipcRenderer.invoke('mcp:status');
+        const statusText = document.getElementById('mcp-status-text');
+        const statusDisplay = document.getElementById('mcp-status-display');
+        const startBtn = document.getElementById('mcp-start-btn');
+        const stopBtn = document.getElementById('mcp-stop-btn');
+        
+        if (statusText) {
+            if (status.running) {
+                statusText.textContent = `Running (Port: ${status.port || 'stdio'})`;
+                if (statusDisplay) {
+                    statusDisplay.style.borderColor = '#2d5a2d';
+                    statusDisplay.style.background = '#1a2d1a';
+                }
+                if (startBtn) startBtn.disabled = true;
+                if (stopBtn) stopBtn.disabled = false;
+            } else {
+                statusText.textContent = 'Not running';
+                if (statusDisplay) {
+                    statusDisplay.style.borderColor = '#3d3d3d';
+                    statusDisplay.style.background = '#1a1a1a';
+                }
+                if (startBtn) startBtn.disabled = false;
+                if (stopBtn) stopBtn.disabled = true;
+            }
+        }
+    } catch (error) {
+        const statusText = document.getElementById('mcp-status-text');
+        if (statusText) {
+            statusText.textContent = 'Error checking status';
+        }
     }
 }
 
@@ -2346,6 +2571,49 @@ document.getElementById('settings-save-tab-size').addEventListener('click', asyn
     } catch (error) {
         await showAlert('Error', `Error: ${error.message}`);
     }
+});
+
+// MCP Server controls
+document.getElementById('mcp-start-btn').addEventListener('click', async () => {
+    try {
+        const result = await ipcRenderer.invoke('mcp:start');
+        const statusDiv = document.getElementById('mcp-status');
+        if (result.success) {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="success">✓ MCP server started successfully</div>';
+            }
+            await updateMCPStatus();
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error || 'Failed to start MCP server'}</div>`;
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
+document.getElementById('mcp-stop-btn').addEventListener('click', async () => {
+    try {
+        const result = await ipcRenderer.invoke('mcp:stop');
+        const statusDiv = document.getElementById('mcp-status');
+        if (result.success) {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="success">✓ MCP server stopped</div>';
+            }
+            await updateMCPStatus();
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error || 'Failed to stop MCP server'}</div>`;
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', `Error: ${error.message}`);
+    }
+});
+
+document.getElementById('mcp-refresh-status-btn').addEventListener('click', async () => {
+    await updateMCPStatus();
 });
 
 // Select notes directory

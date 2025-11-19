@@ -44,6 +44,15 @@
                             <button id="clear-logs" class="btn btn-secondary">🗑 Clear Logs</button>
                         </div>
                     </div>
+                    <div class="log-search-bar">
+                        <input type="text" id="log-search-input" class="log-search-input" placeholder="Search logs..." autocomplete="off" />
+                        <div class="log-search-nav">
+                            <button id="log-search-prev" class="btn btn-secondary btn-small log-search-nav-btn" type="button" disabled>▲</button>
+                            <button id="log-search-next" class="btn btn-secondary btn-small log-search-nav-btn" type="button" disabled>▼</button>
+                        </div>
+                        <span id="log-search-count" class="log-search-count">No search</span>
+                        <button id="log-search-clear" class="btn btn-secondary btn-small" type="button">Clear</button>
+                    </div>
                     <div id="container-logs" class="log-output">
                         <p class="placeholder">No container selected</p>
                     </div>
@@ -311,6 +320,23 @@
                     </div>
                     <div class="settings-footer">
                         <button id="settings-save-tab-size" class="btn btn-primary">Save Tab Size</button>
+                    </div>
+                </div>
+                
+                <div class="settings-section" style="margin-top: 30px;">
+                    <h3>MCP Server</h3>
+                    <div class="settings-item">
+                        <label>MCP Server Status:</label>
+                        <div id="mcp-status-display" style="padding: 8px; background: #1a1a1a; border: 1px solid #3d3d3d; border-radius: 4px; margin: 8px 0;">
+                            <span id="mcp-status-text">Not running</span>
+                        </div>
+                        <p class="settings-hint">Model Context Protocol server for exposing Docker and Git functionality to AI assistants</p>
+                        <div id="mcp-status" class="settings-status"></div>
+                    </div>
+                    <div class="settings-footer" style="display: flex; gap: 8px;">
+                        <button id="mcp-start-btn" class="btn btn-success">▶ Start MCP Server</button>
+                        <button id="mcp-stop-btn" class="btn btn-danger">⏹ Stop MCP Server</button>
+                        <button id="mcp-refresh-status-btn" class="btn btn-secondary">🔄 Refresh Status</button>
                     </div>
                 </div>
             </div>

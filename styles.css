@@ -255,6 +255,65 @@ header h1 {
     border-radius: 4px;
 }
 
+.log-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: #1f1f1f;
+    border-bottom: 1px solid #2d2d2d;
+}
+
+.log-search-nav {
+    display: flex;
+    gap: 4px;
+}
+
+.log-search-nav-btn {
+    width: 34px;
+    padding: 4px 0;
+}
+
+.log-search-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.log-search-input {
+    flex: 1;
+    padding: 8px 10px;
+    background: #2a2a2a;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 13px;
+}
+
+.log-search-input:focus {
+    outline: none;
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 1px rgba(74, 158, 255, 0.3);
+}
+
+.log-search-count {
+    font-size: 12px;
+    color: #aaaaaa;
+    min-width: 90px;
+    text-align: center;
+}
+
+.log-search-highlight {
+    background: #ffeb3b;
+    color: #1a1a1a;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.log-search-highlight-active {
+    background: #ff9800;
+    color: #1a1a1a;
+}
+
 .log-output {
     flex: 1;
     padding: 15px;

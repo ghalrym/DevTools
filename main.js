@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const Docker = require('dockerode');
 const simpleGit = require('simple-git');
+const { initializeMCPServer, stopMCPServer, getMCPStatus } = require('./mcp-server');
 
 let mainWindow;
 let docker;
@@ -1240,3 +1241,16 @@ ipcMain.handle('config:set-tab-size', async (event, tabSize) => {
   return { success: true, tabSize: config.tabSize };
 });
 
+
+// IPC Handlers for MCP Server
+ipcMain.handle('mcp:start', async () => {
+  return await initializeMCPServer(docker, git, initDocker);
+});
+
+ipcMain.handle('mcp:stop', async () => {
+  return await stopMCPServer();
+});
+
+ipcMain.handle('mcp:status', async () => {
+  return getMCPStatus();
+});
