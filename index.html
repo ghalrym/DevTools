@@ -153,10 +153,13 @@
             <div class="diagram-container">
                 <div class="diagram-editor-panel">
                     <div class="diagram-header">
-                        <h2>Diagram Editor</h2>
+                        <div class="diagram-header-info">
+                            <h2>Diagram Editor</h2>
+                            <div id="diagram-current-file" class="diagram-current-file">Unsaved diagram</div>
+                        </div>
                         <div class="diagram-controls">
                             <button id="clear-diagram" class="btn btn-secondary">🗑 Clear</button>
-                            <button id="load-example" class="btn btn-primary">📝 Load Example</button>
+                            <button id="save-diagram-as" class="btn btn-secondary">💾 Save As</button>
                             <button id="save-diagram" class="btn btn-success">💾 Save</button>
                             <button id="export-diagram" class="btn btn-success">📤 Export SVG</button>
                         </div>
@@ -166,18 +169,6 @@
                 <div class="diagram-preview-panel">
                     <div class="diagram-header">
                         <h2>Preview</h2>
-                        <div class="diagram-type-selector">
-                            <label for="diagram-type">Type:</label>
-                            <select id="diagram-type" class="diagram-type-select">
-                                <option value="graph">Flowchart</option>
-                                <option value="sequenceDiagram">Sequence</option>
-                                <option value="classDiagram">Class</option>
-                                <option value="stateDiagram">State</option>
-                                <option value="erDiagram">ER Diagram</option>
-                                <option value="gantt">Gantt</option>
-                                <option value="pie">Pie Chart</option>
-                            </select>
-                        </div>
                     </div>
                     <div id="diagram-preview" class="diagram-preview">
                         <p class="placeholder">Enter diagram code to see preview</p>

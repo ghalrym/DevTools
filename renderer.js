@@ -218,6 +218,8 @@ let lastRenderedLogHtml = '';
 let logSearchTerm = '';
 let logSearchMatchCount = 0;
 let logSearchCurrentIndex = -1;
+let currentDiagramFilePath = null;
+let currentDiagramFileName = '';
 
 const initialLogOutputElement = document.getElementById('container-logs');
 if (initialLogOutputElement) {
@@ -3081,16 +3083,32 @@ function initializeMermaid() {
     }
 }
 
+function setCurrentDiagramFile(filePath) {
+    currentDiagramFilePath = filePath || null;
+    currentDiagramFileName = filePath ? path.basename(filePath) : '';
+    updateDiagramCurrentFileLabel();
+}
+
+function updateDiagramCurrentFileLabel() {
+    const label = document.getElementById('diagram-current-file');
+    if (!label) return;
+    
+    if (currentDiagramFilePath) {
+        label.textContent = `Editing: ${currentDiagramFileName}`;
+    } else {
+        label.textContent = 'Unsaved diagram';
+    }
+}
+
 function initializeDiagramEditor() {
     initializeMermaid();
     
     const diagramCode = document.getElementById('diagram-code');
     const diagramPreview = document.getElementById('diagram-preview');
     const clearBtn = document.getElementById('clear-diagram');
-    const loadExampleBtn = document.getElementById('load-example');
     const saveBtn = document.getElementById('save-diagram');
+    const saveAsBtn = document.getElementById('save-diagram-as');
     const exportBtn = document.getElementById('export-diagram');
-    const diagramType = document.getElementById('diagram-type');
     const refreshDiagramsBtn = document.getElementById('refresh-diagrams');
     
     if (!diagramCode || !diagramPreview) return;
@@ -3112,60 +3130,7 @@ function initializeDiagramEditor() {
         clearBtn.addEventListener('click', () => {
             diagramCode.value = '';
             diagramPreview.innerHTML = '<p class="placeholder">Enter diagram code to see preview</p>';
-        });
-    }
-    
-    // Load example button
-    if (loadExampleBtn) {
-        loadExampleBtn.addEventListener('click', () => {
-            const examples = {
-                'graph': `graph TD
-    A[Start] --> B{Decision}
-    B -->|Yes| C[Action 1]
-    B -->|No| D[Action 2]
-    C --> E[End]
-    D --> E`,
-                'sequenceDiagram': `sequenceDiagram
-    participant A as User
-    participant B as System
-    A->>B: Request
-    B->>B: Process
-    B-->>A: Response`,
-                'classDiagram': `classDiagram
-    class Animal {
-        +String name
-        +int age
-        +eat()
-    }
-    class Dog {
-        +bark()
-    }
-    Animal <|-- Dog`,
-                'stateDiagram': `stateDiagram-v2
-    [*] --> State1
-    State1 --> State2
-    State2 --> [*]`,
-                'erDiagram': `erDiagram
-    CUSTOMER ||--o{ ORDER : places
-    ORDER ||--|{ LINE-ITEM : contains
-    CUSTOMER }|..|{ DELIVERY-ADDRESS : uses`,
-                'gantt': `gantt
-    title Project Timeline
-    dateFormat YYYY-MM-DD
-    section Phase 1
-    Task 1 :a1, 2024-01-01, 30d
-    Task 2 :a2, after a1, 20d
-    section Phase 2
-    Task 3 :a3, after a2, 30d`,
-                'pie': `pie title Distribution
-    "Category A" : 42.1
-    "Category B" : 30.2
-    "Category C" : 27.7`
-            };
-            
-            const selectedType = diagramType ? diagramType.value : 'graph';
-            diagramCode.value = examples[selectedType] || examples['graph'];
-            renderDiagram();
+            setCurrentDiagramFile(null);
         });
     }
     
@@ -3179,6 +3144,18 @@ function initializeDiagramEditor() {
             }
             
             await saveDiagram(code);
+        });
+    }
+    
+    if (saveAsBtn) {
+        saveAsBtn.addEventListener('click', async () => {
+            const code = diagramCode.value.trim();
+            if (!code) {
+                await showAlert('Save Error', 'No diagram code to save.');
+                return;
+            }
+            
+            await saveDiagram(code, { forceNewFile: true });
         });
     }
     
@@ -3212,6 +3189,8 @@ function initializeDiagramEditor() {
     if (diagramCode.value.trim()) {
         renderDiagram();
     }
+    
+    updateDiagramCurrentFileLabel();
 }
 
 async function loadDiagramDirectory() {
@@ -3308,11 +3287,13 @@ async function loadDiagramFromFile(filePath) {
         if (diagramCode) {
             diagramCode.value = result.content;
             renderDiagram();
+            setCurrentDiagramFile(filePath);
         }
     }
 }
 
-async function saveDiagram(code) {
+async function saveDiagram(code, options = {}) {
+    const { forceNewFile = false } = options;
     const dirResult = await ipcRenderer.invoke('diagram:get-directory');
     const directory = dirResult.directory;
     
@@ -3321,19 +3302,32 @@ async function saveDiagram(code) {
         return;
     }
     
-    const fileName = await showPrompt('Save Diagram', 'Enter a name for this diagram:', 'diagram');
-    if (!fileName) {
-        return;
+    let targetPath = !forceNewFile ? currentDiagramFilePath : null;
+    
+    if (!targetPath) {
+        const defaultName = currentDiagramFileName
+            ? currentDiagramFileName.replace(/\.(mmd|mermaid)$/i, '')
+            : 'diagram';
+        const fileName = await showPrompt('Save Diagram', 'Enter a name for this diagram:', defaultName);
+        if (!fileName) {
+            return;
+        }
+        
+        const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        let finalFileName = sanitizedFileName;
+        if (!finalFileName.toLowerCase().endsWith('.mmd')) {
+            finalFileName += '.mmd';
+        }
+        
+        targetPath = path.join(directory, finalFileName);
     }
     
-    const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filePath = path.join(directory, `${sanitizedFileName}.mmd`);
-    
-    const result = await ipcRenderer.invoke('diagram:save-file', filePath, code);
+    const result = await ipcRenderer.invoke('diagram:save-file', targetPath, code);
     if (result.error) {
         await showAlert('Error', `Error saving diagram: ${result.error}`);
     } else {
-        await showAlert('Success', 'Diagram saved successfully!');
+        setCurrentDiagramFile(targetPath);
+        await showAlert('Success', `Diagram saved to ${path.basename(targetPath)}`);
         await loadSavedDiagrams();
     }
 }

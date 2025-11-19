@@ -1025,6 +1025,17 @@ header h1 {
     border-bottom: 1px solid #3d3d3d;
 }
 
+.diagram-header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.diagram-current-file {
+    font-size: 12px;
+    color: #aaaaaa;
+}
+
 .diagram-header h2 {
     margin: 0;
     font-size: 16px;
@@ -1035,36 +1046,6 @@ header h1 {
 .diagram-controls {
     display: flex;
     gap: 8px;
-}
-
-.diagram-type-selector {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.diagram-type-selector label {
-    font-size: 12px;
-    color: #a0a0a0;
-}
-
-.diagram-type-select {
-    padding: 4px 8px;
-    background: #2d2d2d;
-    border: 1px solid #3d3d3d;
-    border-radius: 4px;
-    color: #e0e0e0;
-    font-size: 12px;
-    cursor: pointer;
-}
-
-.diagram-type-select:hover {
-    background: #333;
-}
-
-.diagram-type-select:focus {
-    outline: none;
-    border-color: #4a9eff;
 }
 
 .diagram-code-editor {
