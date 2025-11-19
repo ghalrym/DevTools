@@ -197,6 +197,8 @@ document.querySelectorAll('.tab-button').forEach(button => {
             initializeDiagramEditor();
         } else if (tabName === 'notes') {
             initializeNotesEditor();
+        } else if (tabName === 'database') {
+            initializeDatabaseViewer();
         } else if (tabName === 'settings') {
             loadSettings();
         }
@@ -4609,6 +4611,212 @@ if (refreshBranchesBtn) {
     }, 500);
 }
 
+
+// Database viewer functionality
+let isDatabaseConnected = false;
+
+function initializeDatabaseViewer() {
+    const connectBtn = document.getElementById('db-connect');
+    const disconnectBtn = document.getElementById('db-disconnect');
+    const executeBtn = document.getElementById('db-execute-query');
+    const clearBtn = document.getElementById('db-clear-query');
+    const queryEditor = document.getElementById('db-query-editor');
+    const connectionStatus = document.getElementById('db-connection-status');
+    const schemaTree = document.getElementById('db-schema-tree');
+
+    if (!connectBtn || !queryEditor) return;
+
+    // Connect button
+    connectBtn.addEventListener('click', async () => {
+        const host = document.getElementById('db-host').value.trim();
+        const port = parseInt(document.getElementById('db-port').value) || 5432;
+        const database = document.getElementById('db-database').value.trim();
+        const username = document.getElementById('db-username').value.trim();
+        const password = document.getElementById('db-password').value;
+
+        if (!host || !database || !username) {
+            connectionStatus.innerHTML = '<div class="error">❌ Please fill in all required fields</div>';
+            return;
+        }
+
+        connectBtn.disabled = true;
+        connectBtn.textContent = 'Connecting...';
+        connectionStatus.innerHTML = '<div class="info">Connecting...</div>';
+
+        const result = await ipcRenderer.invoke('db:connect', {
+            host,
+            port,
+            database,
+            username,
+            password,
+        });
+
+        if (result.success) {
+            isDatabaseConnected = true;
+            connectBtn.style.display = 'none';
+            disconnectBtn.style.display = 'block';
+            connectionStatus.innerHTML = '<div class="success">✅ Connected</div>';
+            schemaTree.style.display = 'block';
+            await loadDatabaseTables();
+        } else {
+            connectionStatus.innerHTML = `<div class="error">❌ ${escapeHtml(result.error)}</div>`;
+        }
+
+        connectBtn.disabled = false;
+        connectBtn.textContent = 'Connect';
+    });
+
+    // Disconnect button
+    if (disconnectBtn) {
+        disconnectBtn.addEventListener('click', async () => {
+            const result = await ipcRenderer.invoke('db:disconnect');
+            if (result.success) {
+                isDatabaseConnected = false;
+                connectBtn.style.display = 'block';
+                disconnectBtn.style.display = 'none';
+                connectionStatus.innerHTML = '<div class="info">Disconnected</div>';
+                schemaTree.style.display = 'none';
+                document.getElementById('db-tables-list').innerHTML = '<p class="placeholder">Not connected</p>';
+                document.getElementById('db-results-container').innerHTML = '<p class="placeholder">Execute a query to see results</p>';
+            }
+        });
+    }
+
+    // Execute query button
+    if (executeBtn) {
+        executeBtn.addEventListener('click', async () => {
+            if (!isDatabaseConnected) {
+                await showAlert('Not Connected', 'Please connect to a database first.');
+                return;
+            }
+
+            const query = queryEditor.value.trim();
+            if (!query) {
+                await showAlert('Empty Query', 'Please enter a SQL query.');
+                return;
+            }
+
+            executeBtn.disabled = true;
+            executeBtn.textContent = 'Executing...';
+            const statusEl = document.getElementById('db-query-status');
+            statusEl.textContent = 'Executing query...';
+
+            const result = await ipcRenderer.invoke('db:execute-query', query);
+
+            if (result.success) {
+                displayQueryResults(result);
+                statusEl.textContent = `✓ ${result.rowCount} row(s) in ${result.duration}ms`;
+            } else {
+                document.getElementById('db-results-container').innerHTML = `<div class="error">❌ Error: ${escapeHtml(result.error)}</div>`;
+                statusEl.textContent = `✗ Query failed`;
+            }
+
+            executeBtn.disabled = false;
+            executeBtn.textContent = '▶ Execute';
+        });
+    }
+
+    // Clear query button
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            queryEditor.value = '';
+            queryEditor.focus();
+        });
+    }
+
+    // Setup tab handling for query editor
+    if (queryEditor) {
+        setupTabHandling(queryEditor);
+    }
+}
+
+async function loadDatabaseTables() {
+    const tablesList = document.getElementById('db-tables-list');
+    if (!tablesList) return;
+
+    const result = await ipcRenderer.invoke('db:get-tables');
+    if (result.success) {
+        const tables = result.tables || [];
+        if (tables.length === 0) {
+            tablesList.innerHTML = '<p class="placeholder">No tables found</p>';
+            return;
+        }
+
+        let html = '<div class="db-tables-tree">';
+        tables.forEach(table => {
+            html += `
+                <div class="db-table-item" data-table-name="${escapeHtml(table.name)}">
+                    <span class="db-table-icon">📊</span>
+                    <span class="db-table-name">${escapeHtml(table.name)}</span>
+                </div>
+            `;
+        });
+        html += '</div>';
+
+        tablesList.innerHTML = html;
+
+        // Add click handlers to insert table name into query
+        tablesList.querySelectorAll('.db-table-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const tableName = item.dataset.tableName;
+                const queryEditor = document.getElementById('db-query-editor');
+                if (queryEditor) {
+                    const cursorPos = queryEditor.selectionStart;
+                    const textBefore = queryEditor.value.substring(0, cursorPos);
+                    const textAfter = queryEditor.value.substring(cursorPos);
+                    queryEditor.value = textBefore + tableName + textAfter;
+                    queryEditor.focus();
+                    queryEditor.setSelectionRange(cursorPos + tableName.length, cursorPos + tableName.length);
+                }
+            });
+        });
+    } else {
+        tablesList.innerHTML = `<p class="error">Error loading tables: ${escapeHtml(result.error)}</p>`;
+    }
+}
+
+function displayQueryResults(result) {
+    const container = document.getElementById('db-results-container');
+    if (!container) return;
+
+    if (!result.rows || result.rows.length === 0) {
+        container.innerHTML = '<p class="placeholder">Query executed successfully, but returned no rows</p>';
+        return;
+    }
+
+    const columns = result.columns || Object.keys(result.rows[0] || {});
+    const rows = result.rows;
+
+    // Create table
+    let html = '<div class="db-results-table-wrapper">';
+    html += '<table class="db-results-table">';
+    
+    // Header
+    html += '<thead><tr>';
+    columns.forEach(col => {
+        const colName = typeof col === 'string' ? col : col.name;
+        html += `<th>${escapeHtml(colName)}</th>`;
+    });
+    html += '</tr></thead>';
+
+    // Rows
+    html += '<tbody>';
+    rows.forEach(row => {
+        html += '<tr>';
+        columns.forEach(col => {
+            const colName = typeof col === 'string' ? col : col.name;
+            const value = row[colName];
+            const displayValue = value === null || value === undefined ? '<em>NULL</em>' : escapeHtml(String(value));
+            html += `<td>${displayValue}</td>`;
+        });
+        html += '</tr>';
+    });
+    html += '</tbody>';
+    html += '</table>';
+    html += '</div>';
+
+    container.innerHTML = html;
+}
 
 // Initialize on load
 loadContainers();

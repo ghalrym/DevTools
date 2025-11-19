@@ -19,6 +19,7 @@
             <button class="tab-button" data-tab="git">Git Management</button>
             <button class="tab-button" data-tab="diagraming">Diagraming</button>
             <button class="tab-button" data-tab="notes">Notes</button>
+            <button class="tab-button" data-tab="database">Database</button>
             <button class="tab-button" data-tab="settings">Settings</button>
         </div>
 
@@ -219,6 +220,69 @@
                             <div id="notes-preview" class="notes-preview">
                                 <p class="placeholder">Start typing to see markdown preview</p>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Tab -->
+        <div id="database-tab" class="tab-content">
+            <div class="database-container">
+                <div class="database-sidebar">
+                    <h2>Database Connection</h2>
+                    <div class="database-connection-form">
+                        <div class="form-group">
+                            <label for="db-host">Host:</label>
+                            <input type="text" id="db-host" class="form-input" placeholder="localhost" value="localhost">
+                        </div>
+                        <div class="form-group">
+                            <label for="db-port">Port:</label>
+                            <input type="number" id="db-port" class="form-input" placeholder="5432" value="5432">
+                        </div>
+                        <div class="form-group">
+                            <label for="db-database">Database:</label>
+                            <input type="text" id="db-database" class="form-input" placeholder="postgres">
+                        </div>
+                        <div class="form-group">
+                            <label for="db-username">Username:</label>
+                            <input type="text" id="db-username" class="form-input" placeholder="postgres">
+                        </div>
+                        <div class="form-group">
+                            <label for="db-password">Password:</label>
+                            <input type="password" id="db-password" class="form-input" placeholder="password">
+                        </div>
+                        <div class="form-group">
+                            <button id="db-connect" class="btn btn-primary" style="width: 100%;">Connect</button>
+                            <button id="db-disconnect" class="btn btn-secondary" style="width: 100%; margin-top: 8px; display: none;">Disconnect</button>
+                        </div>
+                        <div id="db-connection-status" class="db-status"></div>
+                    </div>
+                    <div id="db-schema-tree" class="db-schema-tree" style="display: none;">
+                        <h3>Schema</h3>
+                        <div id="db-tables-list" class="db-tables-list">
+                            <p class="placeholder">Connected - loading schema...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="database-main">
+                    <div class="database-header">
+                        <h2>Query Editor</h2>
+                        <div class="database-controls">
+                            <button id="db-execute-query" class="btn btn-success">▶ Execute</button>
+                            <button id="db-clear-query" class="btn btn-secondary">🗑 Clear</button>
+                        </div>
+                    </div>
+                    <div class="database-query-panel">
+                        <textarea id="db-query-editor" class="db-query-editor" placeholder="Enter SQL query here...&#10;&#10;Example:&#10;SELECT * FROM users LIMIT 10;"></textarea>
+                    </div>
+                    <div class="database-results-panel">
+                        <div class="database-results-header">
+                            <h3>Results</h3>
+                            <div id="db-query-status" class="db-query-status"></div>
+                        </div>
+                        <div id="db-results-container" class="db-results-container">
+                            <p class="placeholder">Execute a query to see results</p>
                         </div>
                     </div>
                 </div>

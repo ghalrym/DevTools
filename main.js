@@ -3,11 +3,13 @@ const path = require('path');
 const fs = require('fs');
 const Docker = require('dockerode');
 const simpleGit = require('simple-git');
+const { Pool } = require('pg');
 const { initializeMCPServer, stopMCPServer, getMCPStatus } = require('./mcp-server');
 
 let mainWindow;
 let docker;
 let git;
+let dbPool = null;
 
 // Get config file path
 const getUserDataPath = () => {
@@ -1253,4 +1255,120 @@ ipcMain.handle('mcp:stop', async () => {
 
 ipcMain.handle('mcp:status', async () => {
   return getMCPStatus();
+});
+
+// IPC Handlers for Database
+ipcMain.handle('db:connect', async (event, config) => {
+  try {
+    // Close existing connection if any
+    if (dbPool) {
+      await dbPool.end();
+      dbPool = null;
+    }
+
+    // Create new connection pool
+    dbPool = new Pool({
+      host: config.host || 'localhost',
+      port: config.port || 5432,
+      database: config.database || 'postgres',
+      user: config.username || 'postgres',
+      password: config.password || '',
+      max: 1, // Single connection for this viewer
+    });
+
+    // Test connection
+    const client = await dbPool.connect();
+    await client.query('SELECT NOW()');
+    client.release();
+
+    return { success: true, message: 'Connected successfully' };
+  } catch (error) {
+    if (dbPool) {
+      await dbPool.end();
+      dbPool = null;
+    }
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('db:disconnect', async () => {
+  try {
+    if (dbPool) {
+      await dbPool.end();
+      dbPool = null;
+    }
+    return { success: true, message: 'Disconnected successfully' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('db:get-tables', async () => {
+  try {
+    if (!dbPool) {
+      return { success: false, error: 'Not connected to database' };
+    }
+
+    const client = await dbPool.connect();
+    try {
+      // Get all tables from public schema
+      const result = await client.query(`
+        SELECT 
+          table_name,
+          table_type
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+        ORDER BY table_name;
+      `);
+
+      const tables = result.rows.map(row => ({
+        name: row.table_name,
+        type: row.table_type,
+      }));
+
+      return { success: true, tables };
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('db:execute-query', async (event, query) => {
+  try {
+    if (!dbPool) {
+      return { success: false, error: 'Not connected to database' };
+    }
+
+    if (!query || !query.trim()) {
+      return { success: false, error: 'Query is empty' };
+    }
+
+    const client = await dbPool.connect();
+    try {
+      const startTime = Date.now();
+      const result = await client.query(query);
+      const duration = Date.now() - startTime;
+
+      // Format results
+      const rows = result.rows;
+      const columns = result.fields ? result.fields.map(field => ({
+        name: field.name,
+        dataTypeID: field.dataTypeID,
+      })) : [];
+
+      return {
+        success: true,
+        rows,
+        columns,
+        rowCount: result.rowCount || rows.length,
+        duration,
+      };
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
