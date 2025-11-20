@@ -1266,14 +1266,22 @@ ipcMain.handle('db:connect', async (event, config) => {
       dbPool = null;
     }
 
+    // Convert localhost to 127.0.0.1 to force IPv4 (avoids IPv6 ::1 issues)
+    let host = config.host || 'localhost';
+    if (host === 'localhost' || host === '::1') {
+      host = '127.0.0.1';
+    }
+
     // Create new connection pool
     dbPool = new Pool({
-      host: config.host || 'localhost',
+      host: host,
       port: config.port || 5432,
       database: config.database || 'postgres',
       user: config.username || 'postgres',
       password: config.password || '',
       max: 1, // Single connection for this viewer
+      // Force IPv4 and add connection timeout
+      connectionTimeoutMillis: 10000, // 10 second timeout
     });
 
     // Test connection

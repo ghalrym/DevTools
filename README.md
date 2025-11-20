@@ -1,6 +1,6 @@
-# Git & Docker Manager
+# ReedForge
 
-A desktop application built with Electron for managing Docker containers and Git repositories.
+ReedForge is a desktop application built with Electron for managing Docker containers and Git repositories.
 
 ## Features
 
