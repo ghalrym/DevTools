@@ -231,6 +231,18 @@
             <div class="database-container">
                 <div class="database-sidebar">
                     <h2>Database Connection</h2>
+                    <div class="database-connection-saved">
+                        <div class="form-group">
+                            <label for="db-connection-select">Saved Connection:</label>
+                            <div class="db-connection-select-row">
+                                <select id="db-connection-select" class="form-input">
+                                    <option value="">Manual entry</option>
+                                </select>
+                                <button id="db-connection-manage" class="btn btn-secondary" type="button" title="Manage saved connections in Settings">⚙ Manage</button>
+                            </div>
+                            <p class="settings-hint" style="margin-top: 6px;">Select a saved configuration or enter credentials manually.</p>
+                        </div>
+                    </div>
                     <div class="database-connection-form">
                         <div class="form-group">
                             <label for="db-host">Host:</label>
@@ -267,22 +279,57 @@
                 </div>
                 <div class="database-main">
                     <div class="database-header">
-                        <h2>Query Editor</h2>
-                        <div class="database-controls">
+                        <div class="database-mode-toggle">
+                            <button class="db-mode-button active" data-mode="query">Query Editor</button>
+                            <button class="db-mode-button" data-mode="tables">Table Viewer</button>
+                        </div>
+                        <div class="database-controls" id="db-query-controls">
                             <button id="db-execute-query" class="btn btn-success">▶ Execute</button>
                             <button id="db-clear-query" class="btn btn-secondary">🗑 Clear</button>
                         </div>
-                    </div>
-                    <div class="database-query-panel">
-                        <textarea id="db-query-editor" class="db-query-editor" placeholder="Enter SQL query here...&#10;&#10;Example:&#10;SELECT * FROM users LIMIT 10;"></textarea>
-                    </div>
-                    <div class="database-results-panel">
-                        <div class="database-results-header">
-                            <h3>Results</h3>
-                            <div id="db-query-status" class="db-query-status"></div>
+                        <div class="database-controls" id="db-table-controls" style="display: none;">
+                            <button id="table-viewer-refresh-btn" class="btn btn-secondary">🔄 Refresh Tables</button>
                         </div>
-                        <div id="db-results-container" class="db-results-container">
-                            <p class="placeholder">Execute a query to see results</p>
+                    </div>
+
+                    <div id="database-query-mode" class="database-mode active">
+                        <div class="database-query-panel">
+                            <textarea id="db-query-editor" class="db-query-editor" placeholder="Enter SQL query here...&#10;&#10;Example:&#10;SELECT * FROM users LIMIT 10;"></textarea>
+                        </div>
+                        <div class="database-results-panel">
+                            <div class="database-results-header">
+                                <h3>Results</h3>
+                                <div id="db-query-status" class="db-query-status"></div>
+                            </div>
+                            <div id="db-results-container" class="db-results-container">
+                                <p class="placeholder">Execute a query to see results</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="database-table-mode" class="database-mode" style="display: none;">
+                        <div class="database-table-viewer">
+                            <div class="table-viewer-sidebar">
+                                <div class="form-group">
+                                    <label for="table-viewer-search">Search Tables</label>
+                                    <input type="text" id="table-viewer-search" class="form-input" placeholder="Filter tables..." autocomplete="off">
+                                </div>
+                                <div id="table-viewer-list" class="table-viewer-list">
+                                    <p class="placeholder">Connect to a database to load tables</p>
+                                </div>
+                            </div>
+                            <div class="table-viewer-main">
+                                <div class="table-viewer-header">
+                                    <h2 id="table-viewer-title">Select a table</h2>
+                                    <div class="table-viewer-actions">
+                                        <button id="table-viewer-preview-refresh" class="btn btn-secondary" disabled>🔄 Refresh</button>
+                                        <button id="table-viewer-open-query" class="btn btn-primary" disabled>↗ Open in Query Editor</button>
+                                    </div>
+                                </div>
+                                <div id="table-viewer-preview" class="table-viewer-preview">
+                                    <p class="placeholder">Choose a table on the left to preview the first 200 rows.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -352,6 +399,54 @@
                     </div>
                 </div>
                 
+                <div class="settings-section" id="settings-db-connections-section" style="margin-top: 30px;">
+                    <h3>Database Connections</h3>
+                    <p class="settings-hint">Store multiple Postgres connection profiles securely on your machine. Passwords are saved in plain text inside the ReedForge config file.</p>
+                    <div class="db-connections-settings">
+                        <div class="db-connections-list" id="settings-db-connections-list">
+                            <p class="placeholder" style="font-size: 12px; opacity: 0.7;">No saved connections</p>
+                        </div>
+                        <div class="db-connections-form">
+                            <div class="settings-item">
+                                <label for="settings-db-name">Connection Name</label>
+                                <input type="text" id="settings-db-name" class="settings-input" placeholder="e.g., Production, Local Dev">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settings-db-host">Host</label>
+                                <input type="text" id="settings-db-host" class="settings-input" placeholder="localhost">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settings-db-port">Port</label>
+                                <input type="number" id="settings-db-port" class="settings-input" placeholder="5432" value="5432">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settings-db-database">Database</label>
+                                <input type="text" id="settings-db-database" class="settings-input" placeholder="postgres">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settings-db-username">Username</label>
+                                <input type="text" id="settings-db-username" class="settings-input" placeholder="postgres">
+                            </div>
+                            <div class="settings-item">
+                                <label for="settings-db-password">Password</label>
+                                <input type="password" id="settings-db-password" class="settings-input" placeholder="password">
+                            </div>
+                            <div class="settings-item">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="settings-db-make-default">
+                                    <span>Set as default connection</span>
+                                </label>
+                            </div>
+                            <div class="settings-status" id="settings-db-status"></div>
+                            <div class="settings-footer" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button id="settings-db-new" class="btn btn-secondary" type="button">➕ New</button>
+                                <button id="settings-db-save" class="btn btn-primary" type="button">💾 Save Connection</button>
+                                <button id="settings-db-delete" class="btn btn-danger" type="button" disabled>🗑 Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="settings-section" style="margin-top: 30px;">
                     <h3>Main Branch</h3>
                     <div class="settings-item">

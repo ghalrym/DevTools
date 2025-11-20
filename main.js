@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { randomUUID } = require('crypto');
 const Docker = require('dockerode');
 const simpleGit = require('simple-git');
 const { Pool } = require('pg');
@@ -1241,6 +1242,114 @@ ipcMain.handle('config:set-tab-size', async (event, tabSize) => {
   config.tabSize = Math.max(1, Math.min(8, parseInt(tabSize) || 4));
   saveConfig(config);
   return { success: true, tabSize: config.tabSize };
+});
+
+ipcMain.handle('config:get-db-connections', async () => {
+  const config = loadConfig();
+  return {
+    connections: config.dbConnections || [],
+    activeId: config.activeDbConnectionId || null
+  };
+});
+
+ipcMain.handle('config:save-db-connection', async (event, connection) => {
+  try {
+    if (!connection || typeof connection !== 'object') {
+      return { success: false, error: 'Invalid connection payload' };
+    }
+
+    const config = loadConfig();
+    const connections = Array.isArray(config.dbConnections) ? [...config.dbConnections] : [];
+    let id = connection.id;
+
+    if (!id || !connections.find(c => c.id === id)) {
+      id = typeof randomUUID === 'function' ? randomUUID() : `conn_${Date.now().toString(36)}`;
+    }
+
+    const sanitizedConnection = {
+      id,
+      name: (connection.name || 'Untitled Connection').trim(),
+      host: (connection.host || '').trim(),
+      port: parseInt(connection.port, 10) || 5432,
+      database: (connection.database || '').trim(),
+      username: (connection.username || '').trim(),
+      password: connection.password || ''
+    };
+
+    if (!sanitizedConnection.host || !sanitizedConnection.database || !sanitizedConnection.username) {
+      return { success: false, error: 'Host, database, and username are required' };
+    }
+
+    const existingIndex = connections.findIndex(c => c.id === id);
+    if (existingIndex >= 0) {
+      connections[existingIndex] = sanitizedConnection;
+    } else {
+      connections.push(sanitizedConnection);
+    }
+
+    config.dbConnections = connections;
+
+    if (connection.setActive || !config.activeDbConnectionId) {
+      config.activeDbConnectionId = id;
+    }
+
+    if (!saveConfig(config)) {
+      return { success: false, error: 'Unable to save database connections' };
+    }
+
+    return {
+      success: true,
+      connection: sanitizedConnection,
+      activeId: config.activeDbConnectionId
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('config:delete-db-connection', async (event, connectionId) => {
+  if (!connectionId) {
+    return { success: false, error: 'Connection id is required' };
+  }
+
+  const config = loadConfig();
+  const connections = Array.isArray(config.dbConnections) ? config.dbConnections : [];
+  const newConnections = connections.filter(conn => conn.id !== connectionId);
+
+  if (newConnections.length === connections.length) {
+    return { success: false, error: 'Connection not found' };
+  }
+
+  config.dbConnections = newConnections;
+
+  if (config.activeDbConnectionId === connectionId) {
+    config.activeDbConnectionId = newConnections[0]?.id || null;
+  }
+
+  if (!saveConfig(config)) {
+    return { success: false, error: 'Unable to update database connections' };
+  }
+
+  return {
+    success: true,
+    activeId: config.activeDbConnectionId
+  };
+});
+
+ipcMain.handle('config:set-active-db-connection', async (event, connectionId) => {
+  const config = loadConfig();
+  const connections = Array.isArray(config.dbConnections) ? config.dbConnections : [];
+
+  if (!connections.find(conn => conn.id === connectionId)) {
+    return { success: false, error: 'Connection not found' };
+  }
+
+  config.activeDbConnectionId = connectionId;
+  if (!saveConfig(config)) {
+    return { success: false, error: 'Unable to update active connection' };
+  }
+
+  return { success: true, activeId: connectionId };
 });
 
 

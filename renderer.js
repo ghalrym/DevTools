@@ -222,6 +222,15 @@ let logSearchMatchCount = 0;
 let logSearchCurrentIndex = -1;
 let currentDiagramFilePath = null;
 let currentDiagramFileName = '';
+let dbConnectionsCache = [];
+let activeDbConnectionId = null;
+let selectedSettingsDbConnectionId = null;
+let dbConnectionsLoaded = false;
+let databaseViewerInitialized = false;
+let cachedDatabaseTables = [];
+let tableViewerSelectedTable = null;
+let tableViewerSearchTerm = '';
+let currentDatabaseMode = 'query';
 
 const initialLogOutputElement = document.getElementById('container-logs');
 if (initialLogOutputElement) {
@@ -857,6 +866,343 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function quoteIdentifier(identifier) {
+    if (typeof identifier !== 'string' || identifier.trim() === '') {
+        return '""';
+    }
+    return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+async function refreshDbConnectionsData(options = {}) {
+    try {
+        const result = await ipcRenderer.invoke('config:get-db-connections');
+        dbConnectionsCache = Array.isArray(result.connections) ? result.connections : [];
+        activeDbConnectionId = result.activeId || null;
+        dbConnectionsLoaded = true;
+
+        if (!options.skipDatabaseSelect) {
+            renderDatabaseConnectionSelect();
+            if (options.applyActiveToDatabaseForm) {
+                applyDbConnectionToDatabaseForm(activeDbConnectionId);
+            }
+        }
+
+        if (!options.skipSettingsRender) {
+            renderSettingsDbConnections();
+        }
+    } catch (error) {
+        console.error('Failed to load database connections', error);
+    }
+}
+
+function getDbConnectionById(id) {
+    if (!id) return null;
+    return dbConnectionsCache.find(conn => conn.id === id) || null;
+}
+
+function renderDatabaseConnectionSelect() {
+    const select = document.getElementById('db-connection-select');
+    if (!select) return;
+
+    const previousValue = select.value;
+    select.innerHTML = '';
+
+    const manualOption = document.createElement('option');
+    manualOption.value = '';
+    manualOption.textContent = 'Manual entry';
+    select.appendChild(manualOption);
+
+    dbConnectionsCache.forEach(connection => {
+        const option = document.createElement('option');
+        option.value = connection.id;
+        option.textContent = connection.name || `${connection.host}:${connection.port}/${connection.database}`;
+        if (connection.id === activeDbConnectionId) {
+            option.textContent += ' • Default';
+        }
+        select.appendChild(option);
+    });
+
+    if (previousValue && dbConnectionsCache.some(conn => conn.id === previousValue)) {
+        select.value = previousValue;
+    } else if (activeDbConnectionId && dbConnectionsCache.some(conn => conn.id === activeDbConnectionId)) {
+        select.value = activeDbConnectionId;
+    } else {
+        select.value = '';
+    }
+}
+
+function applyDbConnectionToDatabaseForm(connectionId = null) {
+    const targetId = connectionId || activeDbConnectionId;
+    const connection = getDbConnectionById(targetId);
+    if (!connection) return;
+
+    const hostInput = document.getElementById('db-host');
+    const portInput = document.getElementById('db-port');
+    const databaseInput = document.getElementById('db-database');
+    const usernameInput = document.getElementById('db-username');
+    const passwordInput = document.getElementById('db-password');
+
+    if (hostInput) hostInput.value = connection.host || '';
+    if (portInput) portInput.value = connection.port || 5432;
+    if (databaseInput) databaseInput.value = connection.database || '';
+    if (usernameInput) usernameInput.value = connection.username || '';
+    if (passwordInput) passwordInput.value = connection.password || '';
+}
+
+function renderSettingsDbConnections() {
+    const list = document.getElementById('settings-db-connections-list');
+    if (!list) return;
+
+    if (!dbConnectionsCache.length) {
+        list.innerHTML = '<p class="placeholder" style="font-size: 12px; opacity: 0.7;">No saved connections</p>';
+        selectedSettingsDbConnectionId = null;
+        return;
+    }
+
+    list.innerHTML = '';
+
+    dbConnectionsCache.forEach(connection => {
+        const item = document.createElement('div');
+        item.classList.add('db-connection-item');
+        if (connection.id === selectedSettingsDbConnectionId) {
+            item.classList.add('active');
+        }
+        if (connection.id === activeDbConnectionId) {
+            item.classList.add('default');
+        }
+        item.dataset.connectionId = connection.id;
+        item.innerHTML = `
+            <div>
+                <div class="db-connection-name">${escapeHtml(connection.name || 'Untitled Connection')}</div>
+                <div class="db-connection-meta">${escapeHtml(`${connection.host || ''}:${connection.port || ''} • ${connection.database || ''}`)}</div>
+            </div>
+        `;
+        item.addEventListener('click', () => {
+            selectedSettingsDbConnectionId = connection.id;
+            populateSettingsDbForm(connection);
+            renderSettingsDbConnections();
+        });
+        list.appendChild(item);
+    });
+}
+
+function populateSettingsDbForm(connection = null) {
+    const nameInput = document.getElementById('settings-db-name');
+    const hostInput = document.getElementById('settings-db-host');
+    const portInput = document.getElementById('settings-db-port');
+    const databaseInput = document.getElementById('settings-db-database');
+    const usernameInput = document.getElementById('settings-db-username');
+    const passwordInput = document.getElementById('settings-db-password');
+    const makeDefaultCheckbox = document.getElementById('settings-db-make-default');
+    const deleteButton = document.getElementById('settings-db-delete');
+
+    if (!nameInput || !hostInput || !portInput || !databaseInput || !usernameInput || !passwordInput || !makeDefaultCheckbox) {
+        return;
+    }
+
+    if (!connection) {
+        nameInput.value = '';
+        hostInput.value = '';
+        portInput.value = 5432;
+        databaseInput.value = '';
+        usernameInput.value = '';
+        passwordInput.value = '';
+        makeDefaultCheckbox.checked = false;
+        if (deleteButton) deleteButton.disabled = true;
+        return;
+    }
+
+    nameInput.value = connection.name || '';
+    hostInput.value = connection.host || '';
+    portInput.value = connection.port || 5432;
+    databaseInput.value = connection.database || '';
+    usernameInput.value = connection.username || '';
+    passwordInput.value = connection.password || '';
+    makeDefaultCheckbox.checked = connection.id === activeDbConnectionId;
+    if (deleteButton) deleteButton.disabled = false;
+}
+
+function resetSettingsDbForm() {
+    selectedSettingsDbConnectionId = null;
+    populateSettingsDbForm(null);
+    renderSettingsDbConnections();
+}
+
+function scrollToDbSettingsSection() {
+    const section = document.getElementById('settings-db-connections-section');
+    if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function setDatabaseMode(mode = 'query') {
+    if (!mode) return;
+    currentDatabaseMode = mode;
+
+    document.querySelectorAll('.db-mode-button').forEach(button => {
+        button.classList.toggle('active', button.dataset.mode === mode);
+    });
+
+    const queryMode = document.getElementById('database-query-mode');
+    const tableMode = document.getElementById('database-table-mode');
+    const queryControls = document.getElementById('db-query-controls');
+    const tableControls = document.getElementById('db-table-controls');
+
+    if (queryMode) queryMode.classList.toggle('active', mode === 'query');
+    if (tableMode) tableMode.classList.toggle('active', mode === 'tables');
+    if (queryControls) queryControls.style.display = mode === 'query' ? 'flex' : 'none';
+    if (tableControls) tableControls.style.display = mode === 'tables' ? 'flex' : 'none';
+
+    if (mode === 'tables') {
+        renderTableViewerList();
+        updateTableViewerButtonsState();
+    }
+}
+
+function renderTableViewerList(searchTerm = tableViewerSearchTerm) {
+    const list = document.getElementById('table-viewer-list');
+    if (!list) return;
+
+    tableViewerSearchTerm = (searchTerm || '').toLowerCase();
+
+    if (!isDatabaseConnected) {
+        list.innerHTML = '<p class="placeholder">Connect to a database to load tables.</p>';
+        resetTableViewerPreview('Connect to a database to explore tables.');
+        return;
+    }
+
+    const filteredTables = cachedDatabaseTables
+        .filter(table => table.name.toLowerCase().includes(tableViewerSearchTerm))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (!filteredTables.length) {
+        list.innerHTML = '<p class="placeholder">No tables match your filter.</p>';
+        if (!cachedDatabaseTables.length) {
+            resetTableViewerPreview('No user tables found in the current schema.');
+        }
+        return;
+    }
+
+    list.innerHTML = '';
+    const frag = document.createDocumentFragment();
+
+    filteredTables.forEach(table => {
+        const item = document.createElement('div');
+        item.className = 'table-viewer-item';
+        if (table.name === tableViewerSelectedTable) {
+            item.classList.add('active');
+        }
+        item.textContent = table.name;
+        item.dataset.tableName = table.name;
+        item.addEventListener('click', () => {
+            handleTableViewerSelection(table.name);
+        });
+        frag.appendChild(item);
+    });
+
+    list.appendChild(frag);
+}
+
+function handleTableViewerSelection(tableName) {
+    if (!tableName) return;
+    tableViewerSelectedTable = tableName;
+    renderTableViewerList();
+    updateTableViewerButtonsState();
+    loadTablePreview(tableName);
+}
+
+async function loadTablePreview(tableName) {
+    if (!tableName) return;
+    if (!isDatabaseConnected) {
+        await showAlert('Not Connected', 'Please connect to a database first.');
+        return;
+    }
+
+    const preview = document.getElementById('table-viewer-preview');
+    const title = document.getElementById('table-viewer-title');
+
+    if (title) {
+        title.textContent = tableName;
+    }
+    if (preview) {
+        preview.innerHTML = '<p class="loading">Loading preview...</p>';
+    }
+
+    try {
+        const query = `SELECT * FROM ${quoteIdentifier(tableName)} LIMIT 200;`;
+        const result = await ipcRenderer.invoke('db:execute-query', query);
+
+        if (result.success) {
+            renderTablePreview(result);
+        } else if (preview) {
+            preview.innerHTML = `<div class="error">❌ ${escapeHtml(result.error || 'Unable to load table preview')}</div>`;
+        }
+    } catch (error) {
+        if (preview) {
+            preview.innerHTML = `<div class="error">❌ ${escapeHtml(error.message)}</div>`;
+        }
+    }
+}
+
+function renderTablePreview(result) {
+    const preview = document.getElementById('table-viewer-preview');
+    if (!preview) return;
+
+    const rows = result.rows || [];
+    const columns = (result.columns && result.columns.length > 0)
+        ? result.columns.map(col => col.name)
+        : Object.keys(rows[0] || {});
+
+    if (!rows.length) {
+        preview.innerHTML = '<p class="placeholder">No rows returned (showing up to 200 rows).</p>';
+        return;
+    }
+
+    let html = '<div class="db-results-table-wrapper">';
+    html += '<table class="table-viewer-preview-table">';
+    html += '<thead><tr>';
+    columns.forEach(col => {
+        html += `<th>${escapeHtml(col)}</th>`;
+    });
+    html += '</tr></thead>';
+    html += '<tbody>';
+    rows.forEach(row => {
+        html += '<tr>';
+        columns.forEach(col => {
+            const value = row[col];
+            const displayValue = value === null || value === undefined ? '<em>NULL</em>' : escapeHtml(String(value));
+            html += `<td>${displayValue}</td>`;
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+
+    preview.innerHTML = html;
+}
+
+function resetTableViewerPreview(message) {
+    const preview = document.getElementById('table-viewer-preview');
+    const title = document.getElementById('table-viewer-title');
+
+    if (title) {
+        title.textContent = 'Select a table';
+    }
+    if (preview) {
+        preview.innerHTML = `<p class="placeholder">${message || 'Choose a table to preview its contents.'}</p>`;
+    }
+    tableViewerSelectedTable = null;
+    updateTableViewerButtonsState();
+}
+
+function updateTableViewerButtonsState() {
+    const hasSelection = Boolean(tableViewerSelectedTable) && isDatabaseConnected;
+    const refreshBtn = document.getElementById('table-viewer-preview-refresh');
+    const openBtn = document.getElementById('table-viewer-open-query');
+
+    if (refreshBtn) refreshBtn.disabled = !hasSelection;
+    if (openBtn) openBtn.disabled = !hasSelection;
+}
+
 // Event listeners for Docker
 document.getElementById('refresh-containers').addEventListener('click', loadContainers);
 
@@ -888,6 +1234,168 @@ if (logSearchClearButton) {
 
 updateLogSearchStatus();
 updateLogSearchControls();
+
+document.querySelectorAll('.db-mode-button').forEach(button => {
+    button.addEventListener('click', () => {
+        setDatabaseMode(button.dataset.mode || 'query');
+    });
+});
+
+const tableViewerSearchInput = document.getElementById('table-viewer-search');
+if (tableViewerSearchInput) {
+    tableViewerSearchInput.addEventListener('input', (event) => {
+        renderTableViewerList(event.target.value);
+    });
+}
+
+const tableViewerRefreshBtn = document.getElementById('table-viewer-refresh-btn');
+if (tableViewerRefreshBtn) {
+    tableViewerRefreshBtn.addEventListener('click', async () => {
+        if (!isDatabaseConnected) {
+            await showAlert('Not Connected', 'Connect to a database to refresh tables.');
+            return;
+        }
+        const originalText = tableViewerRefreshBtn.textContent;
+        tableViewerRefreshBtn.disabled = true;
+        tableViewerRefreshBtn.textContent = 'Refreshing...';
+        await loadDatabaseTables();
+        tableViewerRefreshBtn.textContent = originalText;
+        tableViewerRefreshBtn.disabled = false;
+    });
+}
+
+const tableViewerPreviewRefreshBtn = document.getElementById('table-viewer-preview-refresh');
+if (tableViewerPreviewRefreshBtn) {
+    tableViewerPreviewRefreshBtn.addEventListener('click', async () => {
+        if (!tableViewerSelectedTable) {
+            await showAlert('No Table Selected', 'Select a table to refresh its preview.');
+            return;
+        }
+        await loadTablePreview(tableViewerSelectedTable);
+    });
+}
+
+const tableViewerOpenQueryBtn = document.getElementById('table-viewer-open-query');
+if (tableViewerOpenQueryBtn) {
+    tableViewerOpenQueryBtn.addEventListener('click', () => {
+        if (!tableViewerSelectedTable) return;
+        const editor = document.getElementById('db-query-editor');
+        if (editor) {
+            const query = `SELECT * FROM ${quoteIdentifier(tableViewerSelectedTable)} LIMIT 200;`;
+            editor.value = query;
+            setDatabaseMode('query');
+            editor.focus();
+            editor.setSelectionRange(editor.value.length, editor.value.length);
+        }
+    });
+}
+
+const dbConnectionSelectElement = document.getElementById('db-connection-select');
+if (dbConnectionSelectElement) {
+    dbConnectionSelectElement.addEventListener('change', () => {
+        const selectedId = dbConnectionSelectElement.value;
+        if (selectedId) {
+            applyDbConnectionToDatabaseForm(selectedId);
+        }
+    });
+}
+
+const dbConnectionManageButton = document.getElementById('db-connection-manage');
+if (dbConnectionManageButton) {
+    dbConnectionManageButton.addEventListener('click', async () => {
+        const settingsTabButton = document.querySelector('[data-tab="settings"]');
+        if (settingsTabButton) {
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            settingsTabButton.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById('settings-tab').classList.add('active');
+        }
+
+        await loadSettings();
+        await refreshDbConnectionsData({ skipDatabaseSelect: true });
+
+        const selectedId = dbConnectionSelectElement ? dbConnectionSelectElement.value : null;
+        selectedSettingsDbConnectionId = selectedId || null;
+        populateSettingsDbForm(getDbConnectionById(selectedSettingsDbConnectionId));
+        renderSettingsDbConnections();
+        scrollToDbSettingsSection();
+    });
+}
+
+const settingsDbNewButton = document.getElementById('settings-db-new');
+if (settingsDbNewButton) {
+    settingsDbNewButton.addEventListener('click', () => {
+        resetSettingsDbForm();
+        const status = document.getElementById('settings-db-status');
+        if (status) {
+            status.innerHTML = '<div class="info">Creating a new connection</div>';
+        }
+    });
+}
+
+const settingsDbSaveButton = document.getElementById('settings-db-save');
+if (settingsDbSaveButton) {
+    settingsDbSaveButton.addEventListener('click', async () => {
+        const status = document.getElementById('settings-db-status');
+        const payload = {
+            id: selectedSettingsDbConnectionId,
+            name: document.getElementById('settings-db-name')?.value.trim(),
+            host: document.getElementById('settings-db-host')?.value.trim(),
+            port: document.getElementById('settings-db-port')?.value,
+            database: document.getElementById('settings-db-database')?.value.trim(),
+            username: document.getElementById('settings-db-username')?.value.trim(),
+            password: document.getElementById('settings-db-password')?.value,
+            setActive: document.getElementById('settings-db-make-default')?.checked || false
+        };
+
+        if (status) {
+            status.innerHTML = '<div class="info">Saving connection...</div>';
+        }
+
+        const result = await ipcRenderer.invoke('config:save-db-connection', payload);
+        if (result.success) {
+            selectedSettingsDbConnectionId = result.connection.id;
+            if (status) {
+                status.innerHTML = '<div class="success">Connection saved</div>';
+            }
+            await refreshDbConnectionsData({ applyActiveToDatabaseForm: result.connection.id === (dbConnectionSelectElement?.value || null) });
+            populateSettingsDbForm(getDbConnectionById(selectedSettingsDbConnectionId));
+        } else if (status) {
+            status.innerHTML = `<div class="error">❌ ${escapeHtml(result.error || 'Unable to save connection')}</div>`;
+        }
+    });
+}
+
+const settingsDbDeleteButton = document.getElementById('settings-db-delete');
+if (settingsDbDeleteButton) {
+    settingsDbDeleteButton.addEventListener('click', async () => {
+        if (!selectedSettingsDbConnectionId) {
+            await showAlert('No Connection Selected', 'Select a saved connection to delete.');
+            return;
+        }
+
+        const connection = getDbConnectionById(selectedSettingsDbConnectionId);
+        const confirmed = await showConfirm('Delete Connection', `Delete "${connection?.name || 'connection'}"?`);
+        if (!confirmed) return;
+
+        const status = document.getElementById('settings-db-status');
+        if (status) {
+            status.innerHTML = '<div class="info">Deleting connection...</div>';
+        }
+
+        const result = await ipcRenderer.invoke('config:delete-db-connection', selectedSettingsDbConnectionId);
+        if (result.success) {
+            selectedSettingsDbConnectionId = null;
+            if (status) {
+                status.innerHTML = '<div class="success">Connection deleted</div>';
+            }
+            await refreshDbConnectionsData({ applyActiveToDatabaseForm: true });
+            resetSettingsDbForm();
+        } else if (status) {
+            status.innerHTML = `<div class="error">❌ ${escapeHtml(result.error || 'Unable to delete connection')}</div>`;
+        }
+    });
+}
 
 document.getElementById('start-container').addEventListener('click', async () => {
     if (!selectedContainerId) {
@@ -1106,6 +1614,9 @@ async function loadSettings() {
     
     // Load MCP server status
     await updateMCPStatus();
+
+    // Load saved database connections
+    await refreshDbConnectionsData({ skipDatabaseSelect: true });
 }
 
 async function updateMCPStatus() {
@@ -4615,7 +5126,7 @@ if (refreshBranchesBtn) {
 // Database viewer functionality
 let isDatabaseConnected = false;
 
-function initializeDatabaseViewer() {
+async function initializeDatabaseViewer(forceRefresh = false) {
     const connectBtn = document.getElementById('db-connect');
     const disconnectBtn = document.getElementById('db-disconnect');
     const executeBtn = document.getElementById('db-execute-query');
@@ -4625,6 +5136,20 @@ function initializeDatabaseViewer() {
     const schemaTree = document.getElementById('db-schema-tree');
 
     if (!connectBtn || !queryEditor) return;
+
+    await refreshDbConnectionsData({
+        skipSettingsRender: true,
+        applyActiveToDatabaseForm: !dbConnectionSelectElement || !dbConnectionSelectElement.value
+    });
+
+    setDatabaseMode(currentDatabaseMode || 'query');
+    renderTableViewerList();
+    updateTableViewerButtonsState();
+
+    if (databaseViewerInitialized && !forceRefresh) {
+        return;
+    }
+    databaseViewerInitialized = true;
 
     // Connect button
     connectBtn.addEventListener('click', async () => {
@@ -4678,6 +5203,9 @@ function initializeDatabaseViewer() {
                 schemaTree.style.display = 'none';
                 document.getElementById('db-tables-list').innerHTML = '<p class="placeholder">Not connected</p>';
                 document.getElementById('db-results-container').innerHTML = '<p class="placeholder">Execute a query to see results</p>';
+                cachedDatabaseTables = [];
+                renderTableViewerList();
+                resetTableViewerPreview('Connect to a database to explore tables.');
             }
         });
     }
@@ -4737,6 +5265,16 @@ async function loadDatabaseTables() {
     const result = await ipcRenderer.invoke('db:get-tables');
     if (result.success) {
         const tables = result.tables || [];
+        const userTables = tables.filter(table => !/^pg_/i.test(table.name || ''));
+        cachedDatabaseTables = userTables;
+
+        if (tableViewerSelectedTable && !cachedDatabaseTables.some(table => table.name === tableViewerSelectedTable)) {
+            resetTableViewerPreview();
+        } else {
+            updateTableViewerButtonsState();
+        }
+        renderTableViewerList();
+
         if (tables.length === 0) {
             tablesList.innerHTML = '<p class="placeholder">No tables found</p>';
             return;
@@ -4772,6 +5310,9 @@ async function loadDatabaseTables() {
         });
     } else {
         tablesList.innerHTML = `<p class="error">Error loading tables: ${escapeHtml(result.error)}</p>`;
+        cachedDatabaseTables = [];
+        renderTableViewerList();
+        resetTableViewerPreview('Unable to load tables. Try refreshing once connected.');
     }
 }
 
