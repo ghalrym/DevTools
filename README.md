@@ -24,7 +24,6 @@ ReedForge is a desktop application built with Electron for managing Docker conta
 - Connect to PostgreSQL databases and browse tables
 - Execute ad-hoc SQL queries with formatted results
 - Save multiple database connection profiles and choose a default in Settings
-- Toggle between a rich Query Editor and a Table Viewer for quick previews
 
 ## Installation
 

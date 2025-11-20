@@ -279,57 +279,22 @@
                 </div>
                 <div class="database-main">
                     <div class="database-header">
-                        <div class="database-mode-toggle">
-                            <button class="db-mode-button active" data-mode="query">Query Editor</button>
-                            <button class="db-mode-button" data-mode="tables">Table Viewer</button>
-                        </div>
-                        <div class="database-controls" id="db-query-controls">
+                        <h2>Query Editor</h2>
+                        <div class="database-controls">
                             <button id="db-execute-query" class="btn btn-success">▶ Execute</button>
                             <button id="db-clear-query" class="btn btn-secondary">🗑 Clear</button>
                         </div>
-                        <div class="database-controls" id="db-table-controls" style="display: none;">
-                            <button id="table-viewer-refresh-btn" class="btn btn-secondary">🔄 Refresh Tables</button>
-                        </div>
                     </div>
-
-                    <div id="database-query-mode" class="database-mode active">
-                        <div class="database-query-panel">
-                            <textarea id="db-query-editor" class="db-query-editor" placeholder="Enter SQL query here...&#10;&#10;Example:&#10;SELECT * FROM users LIMIT 10;"></textarea>
-                        </div>
-                        <div class="database-results-panel">
-                            <div class="database-results-header">
-                                <h3>Results</h3>
-                                <div id="db-query-status" class="db-query-status"></div>
-                            </div>
-                            <div id="db-results-container" class="db-results-container">
-                                <p class="placeholder">Execute a query to see results</p>
-                            </div>
-                        </div>
+                    <div class="database-query-panel">
+                        <textarea id="db-query-editor" class="db-query-editor" placeholder="Enter SQL query here...&#10;&#10;Example:&#10;SELECT * FROM users LIMIT 10;"></textarea>
                     </div>
-
-                    <div id="database-table-mode" class="database-mode" style="display: none;">
-                        <div class="database-table-viewer">
-                            <div class="table-viewer-sidebar">
-                                <div class="form-group">
-                                    <label for="table-viewer-search">Search Tables</label>
-                                    <input type="text" id="table-viewer-search" class="form-input" placeholder="Filter tables..." autocomplete="off">
-                                </div>
-                                <div id="table-viewer-list" class="table-viewer-list">
-                                    <p class="placeholder">Connect to a database to load tables</p>
-                                </div>
-                            </div>
-                            <div class="table-viewer-main">
-                                <div class="table-viewer-header">
-                                    <h2 id="table-viewer-title">Select a table</h2>
-                                    <div class="table-viewer-actions">
-                                        <button id="table-viewer-preview-refresh" class="btn btn-secondary" disabled>🔄 Refresh</button>
-                                        <button id="table-viewer-open-query" class="btn btn-primary" disabled>↗ Open in Query Editor</button>
-                                    </div>
-                                </div>
-                                <div id="table-viewer-preview" class="table-viewer-preview">
-                                    <p class="placeholder">Choose a table on the left to preview the first 200 rows.</p>
-                                </div>
-                            </div>
+                    <div class="database-results-panel">
+                        <div class="database-results-header">
+                            <h3>Results</h3>
+                            <div id="db-query-status" class="db-query-status"></div>
+                        </div>
+                        <div id="db-results-container" class="db-results-container">
+                            <p class="placeholder">Execute a query to see results</p>
                         </div>
                     </div>
                 </div>

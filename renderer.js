@@ -227,10 +227,6 @@ let activeDbConnectionId = null;
 let selectedSettingsDbConnectionId = null;
 let dbConnectionsLoaded = false;
 let databaseViewerInitialized = false;
-let cachedDatabaseTables = [];
-let tableViewerSelectedTableKey = null;
-let tableViewerSearchTerm = '';
-let currentDatabaseMode = 'query';
 
 const initialLogOutputElement = document.getElementById('container-logs');
 if (initialLogOutputElement) {
@@ -866,41 +862,6 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function quoteIdentifier(identifier) {
-    if (typeof identifier !== 'string' || identifier.trim() === '') {
-        return '""';
-    }
-    return `"${identifier.replace(/"/g, '""')}"`;
-}
-
-function buildTableCacheKey(table) {
-    if (!table) return '';
-    const schemaPart = (table.schema || '').trim();
-    return `${schemaPart}::${table.name}`;
-}
-
-function findCachedTableByKey(key) {
-    if (!key) return null;
-    return cachedDatabaseTables.find(table => buildTableCacheKey(table) === key) || null;
-}
-
-function formatTableDisplayName(table) {
-    if (!table) return '';
-    if (table.schema && table.schema !== 'public') {
-        return `${table.schema}.${table.name}`;
-    }
-    return table.name;
-}
-
-function getQualifiedTableIdentifier(table) {
-    if (!table) return '""';
-    const schema = table.schema && table.schema.trim() !== '' ? table.schema : null;
-    if (schema) {
-        return `${quoteIdentifier(schema)}.${quoteIdentifier(table.name)}`;
-    }
-    return quoteIdentifier(table.name);
-}
-
 async function refreshDbConnectionsData(options = {}) {
     try {
         const result = await ipcRenderer.invoke('config:get-db-connections');
@@ -1063,190 +1024,6 @@ function scrollToDbSettingsSection() {
     }
 }
 
-function setDatabaseMode(mode = 'query') {
-    if (!mode) return;
-    currentDatabaseMode = mode;
-
-    document.querySelectorAll('.db-mode-button').forEach(button => {
-        button.classList.toggle('active', button.dataset.mode === mode);
-    });
-
-    const queryMode = document.getElementById('database-query-mode');
-    const tableMode = document.getElementById('database-table-mode');
-    const queryControls = document.getElementById('db-query-controls');
-    const tableControls = document.getElementById('db-table-controls');
-
-    if (queryMode) queryMode.classList.toggle('active', mode === 'query');
-    if (tableMode) tableMode.classList.toggle('active', mode === 'tables');
-    if (queryControls) queryControls.style.display = mode === 'query' ? 'flex' : 'none';
-    if (tableControls) tableControls.style.display = mode === 'tables' ? 'flex' : 'none';
-
-    if (mode === 'tables') {
-        renderTableViewerList();
-        updateTableViewerButtonsState();
-    }
-}
-
-function renderTableViewerList(searchTerm = tableViewerSearchTerm) {
-    const list = document.getElementById('table-viewer-list');
-    if (!list) return;
-
-    tableViewerSearchTerm = (searchTerm || '').toLowerCase();
-
-    if (!isDatabaseConnected) {
-        list.innerHTML = '<p class="placeholder">Connect to a database to load tables.</p>';
-        resetTableViewerPreview('Connect to a database to explore tables.');
-        return;
-    }
-
-    const filteredTables = cachedDatabaseTables
-        .filter(table => {
-            const label = `${table.schema || ''}.${table.name}`.toLowerCase();
-            return label.includes(tableViewerSearchTerm);
-        })
-        .sort((a, b) => {
-            const schemaCompare = (a.schema || '').localeCompare(b.schema || '');
-            if (schemaCompare !== 0) return schemaCompare;
-            return a.name.localeCompare(b.name);
-        });
-
-    if (!filteredTables.length) {
-        list.innerHTML = '<p class="placeholder">No tables match your filter.</p>';
-        if (!cachedDatabaseTables.length) {
-            resetTableViewerPreview('No user tables found in the current schema.');
-        }
-        return;
-    }
-
-    list.innerHTML = '';
-    const frag = document.createDocumentFragment();
-
-    filteredTables.forEach(table => {
-        const item = document.createElement('div');
-        item.className = 'table-viewer-item';
-        const tableKey = buildTableCacheKey(table);
-        if (tableKey === tableViewerSelectedTableKey) {
-            item.classList.add('active');
-        }
-        item.dataset.tableKey = tableKey;
-        item.innerHTML = `
-            <div class="table-viewer-item-name">${escapeHtml(table.name)}</div>
-            <div class="table-viewer-item-schema">${escapeHtml(table.schema || 'public')}</div>
-        `;
-        item.addEventListener('click', () => {
-            handleTableViewerSelection(tableKey);
-        });
-        frag.appendChild(item);
-    });
-
-    list.appendChild(frag);
-}
-
-function handleTableViewerSelection(tableKey) {
-    if (!tableKey) return;
-    tableViewerSelectedTableKey = tableKey;
-    renderTableViewerList();
-    updateTableViewerButtonsState();
-    loadTablePreview(tableKey);
-}
-
-async function loadTablePreview(tableKey) {
-    if (!tableKey) return;
-    if (!isDatabaseConnected) {
-        await showAlert('Not Connected', 'Please connect to a database first.');
-        return;
-    }
-
-    const table = findCachedTableByKey(tableKey);
-    if (!table) {
-        resetTableViewerPreview('Table no longer exists. Refresh the list.');
-        return;
-    }
-
-    const preview = document.getElementById('table-viewer-preview');
-    const title = document.getElementById('table-viewer-title');
-
-    if (title) {
-        title.textContent = formatTableDisplayName(table);
-    }
-    if (preview) {
-        preview.innerHTML = '<p class="loading">Loading preview...</p>';
-    }
-
-    try {
-        const query = `SELECT * FROM ${getQualifiedTableIdentifier(table)} LIMIT 200;`;
-        const result = await ipcRenderer.invoke('db:execute-query', query);
-
-        if (result.success) {
-            renderTablePreview(result);
-        } else if (preview) {
-            preview.innerHTML = `<div class="error">❌ ${escapeHtml(result.error || 'Unable to load table preview')}</div>`;
-        }
-    } catch (error) {
-        if (preview) {
-            preview.innerHTML = `<div class="error">❌ ${escapeHtml(error.message)}</div>`;
-        }
-    }
-}
-
-function renderTablePreview(result) {
-    const preview = document.getElementById('table-viewer-preview');
-    if (!preview) return;
-
-    const rows = result.rows || [];
-    const columns = (result.columns && result.columns.length > 0)
-        ? result.columns.map(col => col.name)
-        : Object.keys(rows[0] || {});
-
-    if (!rows.length) {
-        preview.innerHTML = '<p class="placeholder">No rows returned (showing up to 200 rows).</p>';
-        return;
-    }
-
-    let html = '<div class="db-results-table-wrapper">';
-    html += '<table class="table-viewer-preview-table">';
-    html += '<thead><tr>';
-    columns.forEach(col => {
-        html += `<th>${escapeHtml(col)}</th>`;
-    });
-    html += '</tr></thead>';
-    html += '<tbody>';
-    rows.forEach(row => {
-        html += '<tr>';
-        columns.forEach(col => {
-            const value = row[col];
-            const displayValue = value === null || value === undefined ? '<em>NULL</em>' : escapeHtml(String(value));
-            html += `<td>${displayValue}</td>`;
-        });
-        html += '</tr>';
-    });
-    html += '</tbody></table></div>';
-
-    preview.innerHTML = html;
-}
-
-function resetTableViewerPreview(message) {
-    const preview = document.getElementById('table-viewer-preview');
-    const title = document.getElementById('table-viewer-title');
-
-    if (title) {
-        title.textContent = 'Select a table';
-    }
-    if (preview) {
-        preview.innerHTML = `<p class="placeholder">${message || 'Choose a table to preview its contents.'}</p>`;
-    }
-    tableViewerSelectedTableKey = null;
-    updateTableViewerButtonsState();
-}
-
-function updateTableViewerButtonsState() {
-    const hasSelection = Boolean(tableViewerSelectedTableKey) && isDatabaseConnected;
-    const refreshBtn = document.getElementById('table-viewer-preview-refresh');
-    const openBtn = document.getElementById('table-viewer-open-query');
-
-    if (refreshBtn) refreshBtn.disabled = !hasSelection;
-    if (openBtn) openBtn.disabled = !hasSelection;
-}
 
 // Event listeners for Docker
 document.getElementById('refresh-containers').addEventListener('click', loadContainers);
@@ -1279,62 +1056,6 @@ if (logSearchClearButton) {
 
 updateLogSearchStatus();
 updateLogSearchControls();
-
-document.querySelectorAll('.db-mode-button').forEach(button => {
-    button.addEventListener('click', () => {
-        setDatabaseMode(button.dataset.mode || 'query');
-    });
-});
-
-const tableViewerSearchInput = document.getElementById('table-viewer-search');
-if (tableViewerSearchInput) {
-    tableViewerSearchInput.addEventListener('input', (event) => {
-        renderTableViewerList(event.target.value);
-    });
-}
-
-const tableViewerRefreshBtn = document.getElementById('table-viewer-refresh-btn');
-if (tableViewerRefreshBtn) {
-    tableViewerRefreshBtn.addEventListener('click', async () => {
-        if (!isDatabaseConnected) {
-            await showAlert('Not Connected', 'Connect to a database to refresh tables.');
-            return;
-        }
-        const originalText = tableViewerRefreshBtn.textContent;
-        tableViewerRefreshBtn.disabled = true;
-        tableViewerRefreshBtn.textContent = 'Refreshing...';
-        await loadDatabaseTables();
-        tableViewerRefreshBtn.textContent = originalText;
-        tableViewerRefreshBtn.disabled = false;
-    });
-}
-
-const tableViewerPreviewRefreshBtn = document.getElementById('table-viewer-preview-refresh');
-if (tableViewerPreviewRefreshBtn) {
-    tableViewerPreviewRefreshBtn.addEventListener('click', async () => {
-        if (!tableViewerSelectedTableKey) {
-            await showAlert('No Table Selected', 'Select a table to refresh its preview.');
-            return;
-        }
-        await loadTablePreview(tableViewerSelectedTableKey);
-    });
-}
-
-const tableViewerOpenQueryBtn = document.getElementById('table-viewer-open-query');
-if (tableViewerOpenQueryBtn) {
-    tableViewerOpenQueryBtn.addEventListener('click', () => {
-        if (!tableViewerSelectedTableKey) return;
-        const editor = document.getElementById('db-query-editor');
-        const table = findCachedTableByKey(tableViewerSelectedTableKey);
-        if (editor && table) {
-            const query = `SELECT * FROM ${getQualifiedTableIdentifier(table)} LIMIT 200;`;
-            editor.value = query;
-            setDatabaseMode('query');
-            editor.focus();
-            editor.setSelectionRange(editor.value.length, editor.value.length);
-        }
-    });
-}
 
 const dbConnectionSelectElement = document.getElementById('db-connection-select');
 if (dbConnectionSelectElement) {
@@ -5188,10 +4909,6 @@ async function initializeDatabaseViewer(forceRefresh = false) {
         applyActiveToDatabaseForm: !dbConnectionSelectElement || !dbConnectionSelectElement.value
     });
 
-    setDatabaseMode(currentDatabaseMode || 'query');
-    renderTableViewerList();
-    updateTableViewerButtonsState();
-
     if (databaseViewerInitialized && !forceRefresh) {
         return;
     }
@@ -5249,9 +4966,6 @@ async function initializeDatabaseViewer(forceRefresh = false) {
                 schemaTree.style.display = 'none';
                 document.getElementById('db-tables-list').innerHTML = '<p class="placeholder">Not connected</p>';
                 document.getElementById('db-results-container').innerHTML = '<p class="placeholder">Execute a query to see results</p>';
-                cachedDatabaseTables = [];
-                renderTableViewerList();
-                resetTableViewerPreview('Connect to a database to explore tables.');
             }
         });
     }
@@ -5316,15 +5030,6 @@ async function loadDatabaseTables() {
             type: table.type
         }));
 
-        cachedDatabaseTables = tables;
-
-        if (tableViewerSelectedTableKey && !findCachedTableByKey(tableViewerSelectedTableKey)) {
-            resetTableViewerPreview();
-        } else {
-            updateTableViewerButtonsState();
-        }
-        renderTableViewerList();
-
         if (tables.length === 0) {
             tablesList.innerHTML = '<p class="placeholder">No tables found</p>';
             return;
@@ -5367,9 +5072,6 @@ async function loadDatabaseTables() {
         });
     } else {
         tablesList.innerHTML = `<p class="error">Error loading tables: ${escapeHtml(result.error)}</p>`;
-        cachedDatabaseTables = [];
-        renderTableViewerList();
-        resetTableViewerPreview('Unable to load tables. Try refreshing once connected.');
     }
 }
 
