@@ -228,7 +228,7 @@ let selectedSettingsDbConnectionId = null;
 let dbConnectionsLoaded = false;
 let databaseViewerInitialized = false;
 let cachedDatabaseTables = [];
-let tableViewerSelectedTable = null;
+let tableViewerSelectedTableKey = null;
 let tableViewerSearchTerm = '';
 let currentDatabaseMode = 'query';
 
@@ -873,6 +873,34 @@ function quoteIdentifier(identifier) {
     return `"${identifier.replace(/"/g, '""')}"`;
 }
 
+function buildTableCacheKey(table) {
+    if (!table) return '';
+    const schemaPart = (table.schema || '').trim();
+    return `${schemaPart}::${table.name}`;
+}
+
+function findCachedTableByKey(key) {
+    if (!key) return null;
+    return cachedDatabaseTables.find(table => buildTableCacheKey(table) === key) || null;
+}
+
+function formatTableDisplayName(table) {
+    if (!table) return '';
+    if (table.schema && table.schema !== 'public') {
+        return `${table.schema}.${table.name}`;
+    }
+    return table.name;
+}
+
+function getQualifiedTableIdentifier(table) {
+    if (!table) return '""';
+    const schema = table.schema && table.schema.trim() !== '' ? table.schema : null;
+    if (schema) {
+        return `${quoteIdentifier(schema)}.${quoteIdentifier(table.name)}`;
+    }
+    return quoteIdentifier(table.name);
+}
+
 async function refreshDbConnectionsData(options = {}) {
     try {
         const result = await ipcRenderer.invoke('config:get-db-connections');
@@ -1072,8 +1100,15 @@ function renderTableViewerList(searchTerm = tableViewerSearchTerm) {
     }
 
     const filteredTables = cachedDatabaseTables
-        .filter(table => table.name.toLowerCase().includes(tableViewerSearchTerm))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .filter(table => {
+            const label = `${table.schema || ''}.${table.name}`.toLowerCase();
+            return label.includes(tableViewerSearchTerm);
+        })
+        .sort((a, b) => {
+            const schemaCompare = (a.schema || '').localeCompare(b.schema || '');
+            if (schemaCompare !== 0) return schemaCompare;
+            return a.name.localeCompare(b.name);
+        });
 
     if (!filteredTables.length) {
         list.innerHTML = '<p class="placeholder">No tables match your filter.</p>';
@@ -1089,13 +1124,17 @@ function renderTableViewerList(searchTerm = tableViewerSearchTerm) {
     filteredTables.forEach(table => {
         const item = document.createElement('div');
         item.className = 'table-viewer-item';
-        if (table.name === tableViewerSelectedTable) {
+        const tableKey = buildTableCacheKey(table);
+        if (tableKey === tableViewerSelectedTableKey) {
             item.classList.add('active');
         }
-        item.textContent = table.name;
-        item.dataset.tableName = table.name;
+        item.dataset.tableKey = tableKey;
+        item.innerHTML = `
+            <div class="table-viewer-item-name">${escapeHtml(table.name)}</div>
+            <div class="table-viewer-item-schema">${escapeHtml(table.schema || 'public')}</div>
+        `;
         item.addEventListener('click', () => {
-            handleTableViewerSelection(table.name);
+            handleTableViewerSelection(tableKey);
         });
         frag.appendChild(item);
     });
@@ -1103,18 +1142,24 @@ function renderTableViewerList(searchTerm = tableViewerSearchTerm) {
     list.appendChild(frag);
 }
 
-function handleTableViewerSelection(tableName) {
-    if (!tableName) return;
-    tableViewerSelectedTable = tableName;
+function handleTableViewerSelection(tableKey) {
+    if (!tableKey) return;
+    tableViewerSelectedTableKey = tableKey;
     renderTableViewerList();
     updateTableViewerButtonsState();
-    loadTablePreview(tableName);
+    loadTablePreview(tableKey);
 }
 
-async function loadTablePreview(tableName) {
-    if (!tableName) return;
+async function loadTablePreview(tableKey) {
+    if (!tableKey) return;
     if (!isDatabaseConnected) {
         await showAlert('Not Connected', 'Please connect to a database first.');
+        return;
+    }
+
+    const table = findCachedTableByKey(tableKey);
+    if (!table) {
+        resetTableViewerPreview('Table no longer exists. Refresh the list.');
         return;
     }
 
@@ -1122,14 +1167,14 @@ async function loadTablePreview(tableName) {
     const title = document.getElementById('table-viewer-title');
 
     if (title) {
-        title.textContent = tableName;
+        title.textContent = formatTableDisplayName(table);
     }
     if (preview) {
         preview.innerHTML = '<p class="loading">Loading preview...</p>';
     }
 
     try {
-        const query = `SELECT * FROM ${quoteIdentifier(tableName)} LIMIT 200;`;
+        const query = `SELECT * FROM ${getQualifiedTableIdentifier(table)} LIMIT 200;`;
         const result = await ipcRenderer.invoke('db:execute-query', query);
 
         if (result.success) {
@@ -1190,12 +1235,12 @@ function resetTableViewerPreview(message) {
     if (preview) {
         preview.innerHTML = `<p class="placeholder">${message || 'Choose a table to preview its contents.'}</p>`;
     }
-    tableViewerSelectedTable = null;
+    tableViewerSelectedTableKey = null;
     updateTableViewerButtonsState();
 }
 
 function updateTableViewerButtonsState() {
-    const hasSelection = Boolean(tableViewerSelectedTable) && isDatabaseConnected;
+    const hasSelection = Boolean(tableViewerSelectedTableKey) && isDatabaseConnected;
     const refreshBtn = document.getElementById('table-viewer-preview-refresh');
     const openBtn = document.getElementById('table-viewer-open-query');
 
@@ -1267,21 +1312,22 @@ if (tableViewerRefreshBtn) {
 const tableViewerPreviewRefreshBtn = document.getElementById('table-viewer-preview-refresh');
 if (tableViewerPreviewRefreshBtn) {
     tableViewerPreviewRefreshBtn.addEventListener('click', async () => {
-        if (!tableViewerSelectedTable) {
+        if (!tableViewerSelectedTableKey) {
             await showAlert('No Table Selected', 'Select a table to refresh its preview.');
             return;
         }
-        await loadTablePreview(tableViewerSelectedTable);
+        await loadTablePreview(tableViewerSelectedTableKey);
     });
 }
 
 const tableViewerOpenQueryBtn = document.getElementById('table-viewer-open-query');
 if (tableViewerOpenQueryBtn) {
     tableViewerOpenQueryBtn.addEventListener('click', () => {
-        if (!tableViewerSelectedTable) return;
+        if (!tableViewerSelectedTableKey) return;
         const editor = document.getElementById('db-query-editor');
-        if (editor) {
-            const query = `SELECT * FROM ${quoteIdentifier(tableViewerSelectedTable)} LIMIT 200;`;
+        const table = findCachedTableByKey(tableViewerSelectedTableKey);
+        if (editor && table) {
+            const query = `SELECT * FROM ${getQualifiedTableIdentifier(table)} LIMIT 200;`;
             editor.value = query;
             setDatabaseMode('query');
             editor.focus();
@@ -5264,11 +5310,15 @@ async function loadDatabaseTables() {
 
     const result = await ipcRenderer.invoke('db:get-tables');
     if (result.success) {
-        const tables = result.tables || [];
-        const userTables = tables.filter(table => !/^pg_/i.test(table.name || ''));
-        cachedDatabaseTables = userTables;
+        const tables = (result.tables || []).map(table => ({
+            name: table.name,
+            schema: table.schema || 'public',
+            type: table.type
+        }));
 
-        if (tableViewerSelectedTable && !cachedDatabaseTables.some(table => table.name === tableViewerSelectedTable)) {
+        cachedDatabaseTables = tables;
+
+        if (tableViewerSelectedTableKey && !findCachedTableByKey(tableViewerSelectedTableKey)) {
             resetTableViewerPreview();
         } else {
             updateTableViewerButtonsState();
@@ -5283,9 +5333,12 @@ async function loadDatabaseTables() {
         let html = '<div class="db-tables-tree">';
         tables.forEach(table => {
             html += `
-                <div class="db-table-item" data-table-name="${escapeHtml(table.name)}">
+                <div class="db-table-item" data-table-name="${escapeHtml(table.name)}" data-table-schema="${escapeHtml(table.schema || '')}">
                     <span class="db-table-icon">📊</span>
-                    <span class="db-table-name">${escapeHtml(table.name)}</span>
+                    <div>
+                        <span class="db-table-name">${escapeHtml(table.name)}</span>
+                        <span class="db-table-schema">${escapeHtml(table.schema || '')}</span>
+                    </div>
                 </div>
             `;
         });
@@ -5297,14 +5350,18 @@ async function loadDatabaseTables() {
         tablesList.querySelectorAll('.db-table-item').forEach(item => {
             item.addEventListener('click', () => {
                 const tableName = item.dataset.tableName;
+                const tableSchema = item.dataset.tableSchema;
                 const queryEditor = document.getElementById('db-query-editor');
                 if (queryEditor) {
+                    const qualifiedName = tableSchema && tableSchema.trim() !== ''
+                        ? `${tableSchema}.${tableName}`
+                        : tableName;
                     const cursorPos = queryEditor.selectionStart;
                     const textBefore = queryEditor.value.substring(0, cursorPos);
                     const textAfter = queryEditor.value.substring(cursorPos);
-                    queryEditor.value = textBefore + tableName + textAfter;
+                    queryEditor.value = textBefore + qualifiedName + textAfter;
                     queryEditor.focus();
-                    queryEditor.setSelectionRange(cursorPos + tableName.length, cursorPos + tableName.length);
+                    queryEditor.setSelectionRange(cursorPos + qualifiedName.length, cursorPos + qualifiedName.length);
                 }
             });
         });

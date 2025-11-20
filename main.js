@@ -1428,17 +1428,19 @@ ipcMain.handle('db:get-tables', async () => {
 
     const client = await dbPool.connect();
     try {
-      // Get all tables from public schema
+      // Get all non-system tables across schemas (excluding pg_catalog & information_schema)
       const result = await client.query(`
         SELECT 
+          table_schema,
           table_name,
           table_type
         FROM information_schema.tables
-        WHERE table_schema = 'public'
-        ORDER BY table_name;
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY table_schema, table_name;
       `);
 
       const tables = result.rows.map(row => ({
+        schema: row.table_schema,
         name: row.table_name,
         type: row.table_type,
       }));

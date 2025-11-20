@@ -2098,6 +2098,13 @@ header h1 {
     font-family: 'Courier New', monospace;
 }
 
+.db-table-schema {
+    display: block;
+    font-size: 11px;
+    color: #a0a0a0;
+    text-transform: lowercase;
+}
+
 .database-main {
     flex: 1;
     display: flex;
@@ -2248,9 +2255,11 @@ header h1 {
     border-radius: 6px;
     border: 1px solid transparent;
     color: #d0d0d0;
-    font-size: 13px;
     cursor: pointer;
     transition: all 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .table-viewer-item:hover {
@@ -2262,6 +2271,17 @@ header h1 {
     border-color: #4a9eff;
     background: rgba(74, 158, 255, 0.15);
     color: #fff;
+}
+
+.table-viewer-item-name {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.table-viewer-item-schema {
+    font-size: 11px;
+    color: #a0a0a0;
+    text-transform: lowercase;
 }
 
 .table-viewer-main {
