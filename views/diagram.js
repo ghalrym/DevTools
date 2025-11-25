@@ -1,6 +1,6 @@
 const { ipcRenderer } = require('electron');
 const path = require('path');
-const { showAlert = window.showAlert, showConfirm = window.showConfirm, showPrompt = window.showPrompt, escapeHtml = window.escapeHtml } = window;
+const { escapeHtml } = require('../renderer/core/utils');
 
 function createDiagramView() {
     // Diagram editor state
@@ -88,7 +88,7 @@ function initializeDiagramEditor() {
         saveBtn.addEventListener('click', async () => {
             const code = diagramCode.value.trim();
             if (!code) {
-                await showAlert('Save Error', 'No diagram code to save.');
+                await window.showAlert('Save Error', 'No diagram code to save.');
                 return;
             }
             
@@ -100,7 +100,7 @@ function initializeDiagramEditor() {
         saveAsBtn.addEventListener('click', async () => {
             const code = diagramCode.value.trim();
             if (!code) {
-                await showAlert('Save Error', 'No diagram code to save.');
+                await window.showAlert('Save Error', 'No diagram code to save.');
                 return;
             }
             
@@ -122,7 +122,7 @@ function initializeDiagramEditor() {
                 link.click();
                 URL.revokeObjectURL(url);
             } else {
-                showAlert('Export Error', 'No diagram to export. Please create a diagram first.');
+                window.showAlert('Export Error', 'No diagram to export. Please create a diagram first.');
             }
         });
     }
@@ -214,11 +214,11 @@ async function loadSavedDiagrams() {
         btn.addEventListener('click', async (e) => {
             const filePath = e.target.dataset.filePath;
             const fileName = path.basename(filePath);
-            const confirmed = await showConfirm('Delete Diagram', `Are you sure you want to delete "${fileName}"?`);
+            const confirmed = await window.showConfirm('Delete Diagram', `Are you sure you want to delete "${fileName}"?`);
             if (confirmed) {
                 const result = await ipcRenderer.invoke('diagram:delete-file', filePath);
                 if (result.error) {
-                    await showAlert('Error', `Error deleting file: ${result.error}`);
+                    await window.showAlert('Error', `Error deleting file: ${result.error}`);
                 } else {
                     await loadSavedDiagrams();
                 }
@@ -230,7 +230,7 @@ async function loadSavedDiagrams() {
 async function loadDiagramFromFile(filePath) {
     const result = await ipcRenderer.invoke('diagram:load-file', filePath);
     if (result.error) {
-        await showAlert('Error', `Error loading diagram: ${result.error}`);
+        await window.showAlert('Error', `Error loading diagram: ${result.error}`);
     } else {
         const diagramCode = document.getElementById('diagram-code');
         if (diagramCode) {
@@ -247,7 +247,7 @@ async function saveDiagram(code, options = {}) {
     const directory = dirResult.directory;
     
     if (!directory) {
-        await showAlert('Save Error', 'Please configure a diagram directory in Settings first.');
+        await window.showAlert('Save Error', 'Please configure a diagram directory in Settings first.');
         return;
     }
     
@@ -257,7 +257,7 @@ async function saveDiagram(code, options = {}) {
         const defaultName = currentDiagramFileName
             ? currentDiagramFileName.replace(/\.(mmd|mermaid)$/i, '')
             : 'diagram';
-        const fileName = await showPrompt('Save Diagram', 'Enter a name for this diagram:', defaultName);
+        const fileName = await window.showPrompt('Save Diagram', 'Enter a name for this diagram:', defaultName);
         if (!fileName) {
             return;
         }
@@ -273,10 +273,10 @@ async function saveDiagram(code, options = {}) {
     
     const result = await ipcRenderer.invoke('diagram:save-file', targetPath, code);
     if (result.error) {
-        await showAlert('Error', `Error saving diagram: ${result.error}`);
+        await window.showAlert('Error', `Error saving diagram: ${result.error}`);
     } else {
         setCurrentDiagramFile(targetPath);
-        await showAlert('Success', `Diagram saved to ${path.basename(targetPath)}`);
+        await window.showAlert('Success', `Diagram saved to ${path.basename(targetPath)}`);
         await loadSavedDiagrams();
     }
 }

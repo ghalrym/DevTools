@@ -1,6 +1,6 @@
 const { ipcRenderer } = require('electron');
 const path = require('path');
-const { showAlert = window.showAlert, showConfirm = window.showConfirm, escapeHtml = window.escapeHtml } = window;
+const { escapeHtml } = require('../renderer/core/utils');
 
 function createGitView() {
 // Git functionality
@@ -356,7 +356,7 @@ async function loadBranches() {
 }
 
 async function checkoutBranch(branchName) {
-    const confirmed = await showConfirm('Switch Branch', `Switch to branch "${branchName}"?`);
+    const confirmed = await window.showConfirm('Switch Branch', `Switch to branch "${branchName}"?`);
     if (!confirmed) {
         return;
     }
@@ -364,7 +364,7 @@ async function checkoutBranch(branchName) {
     const result = await ipcRenderer.invoke('git:checkout-branch', branchName);
     
     if (result.error) {
-        await showAlert('Error', `Error switching branch: ${result.error}`);
+        await window.showAlert('Error', `Error switching branch: ${result.error}`);
     } else {
         await loadBranches();
         await loadCommitFiles();
@@ -374,7 +374,7 @@ async function checkoutBranch(branchName) {
 }
 
 async function checkoutRemoteBranch(remoteBranchName, localBranchName) {
-    const confirmed = await showConfirm('Checkout Remote Branch', `Checkout and track remote branch "${localBranchName}"?`);
+    const confirmed = await window.showConfirm('Checkout Remote Branch', `Checkout and track remote branch "${localBranchName}"?`);
     if (!confirmed) {
         return;
     }
@@ -382,7 +382,7 @@ async function checkoutRemoteBranch(remoteBranchName, localBranchName) {
     const result = await ipcRenderer.invoke('git:checkout-remote-branch', remoteBranchName, localBranchName);
     
     if (result.error) {
-        await showAlert('Error', `Error checking out remote branch: ${result.error}`);
+        await window.showAlert('Error', `Error checking out remote branch: ${result.error}`);
     } else {
         await loadBranches();
         await loadCommitFiles();
@@ -488,7 +488,7 @@ async function resetToCommit(commitHash, resetType) {
         'hard': 'Discards all changes (DESTRUCTIVE)'
     };
     
-    const confirmed = await showConfirm(
+    const confirmed = await window.showConfirm(
         `Reset to Commit (${typeNames[resetType]})`,
         `Reset HEAD to commit ${commitHash.substring(0, 7)}?\n\nType: ${typeNames[resetType]} - ${typeDescriptions[resetType]}\n\n${resetType === 'hard' ? 'WARNING: This will discard all uncommitted changes!' : 'This will move HEAD to the selected commit.'}`
     );
@@ -501,24 +501,24 @@ async function resetToCommit(commitHash, resetType) {
         const result = await ipcRenderer.invoke('git:reset', commitHash, resetType);
         
         if (result.error) {
-            await showAlert('Error', `Error resetting: ${result.error}`);
+            await window.showAlert('Error', `Error resetting: ${result.error}`);
             addGitMessage('Reset Error', result.message || result.error, 'error');
         } else {
-            await showAlert('Success', `Reset to commit ${commitHash.substring(0, 7)} successful!`);
+            await window.showAlert('Success', `Reset to commit ${commitHash.substring(0, 7)} successful!`);
             addGitMessage('Reset Success', result.message || `Reset to ${commitHash.substring(0, 7)} (${typeNames[resetType]})`, 'success');
             await loadBranches();
             await loadCommitFiles();
             await loadGitLogs();
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
         addGitMessage('Reset Error', error.message, 'error');
     }
 }
 
 async function updateBranch(branchName) {
     if (!branchName) {
-        await showAlert('Error', 'No branch specified');
+        await window.showAlert('Error', 'No branch specified');
         return;
     }
     
@@ -532,7 +532,7 @@ async function updateBranch(branchName) {
         
         // If not on the target branch, checkout first
         if (currentBranch !== branchName) {
-            const confirmed = await showConfirm(
+            const confirmed = await window.showConfirm(
                 'Checkout Branch',
                 `You need to checkout "${branchName}" first to update it. Checkout now?`
             );
@@ -544,7 +544,7 @@ async function updateBranch(branchName) {
             // Checkout the branch
             const checkoutResult = await ipcRenderer.invoke('git:checkout-branch', branchName);
             if (checkoutResult.error) {
-                await showAlert('Error', `Error checking out branch: ${checkoutResult.error}`);
+                await window.showAlert('Error', `Error checking out branch: ${checkoutResult.error}`);
                 addGitMessage('Update Error', `Failed to checkout ${branchName}: ${checkoutResult.error}`, 'error');
                 return;
             }
@@ -554,10 +554,10 @@ async function updateBranch(branchName) {
         const pullResult = await ipcRenderer.invoke('git:pull', 'origin', branchName);
         
         if (pullResult.error) {
-            await showAlert('Error', `Error updating branch: ${pullResult.error}`);
+            await window.showAlert('Error', `Error updating branch: ${pullResult.error}`);
             addGitMessage('Update Error', pullResult.message || pullResult.error, 'error');
         } else {
-            await showAlert('Success', `Branch "${branchName}" updated successfully!`);
+            await window.showAlert('Success', `Branch "${branchName}" updated successfully!`);
             addGitMessage('Update Success', pullResult.message || `Updated ${branchName} from remote`, 'success');
             // Refresh branches and logs
             await loadBranches();
@@ -565,7 +565,7 @@ async function updateBranch(branchName) {
             await loadGitLogs(branchName);
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
         addGitMessage('Update Error', error.message, 'error');
     }
 }
@@ -579,16 +579,16 @@ async function rebaseBranch(branchName) {
             currentBranch = statusResult.status.current;
         }
     } catch (e) {
-        await showAlert('Error', 'Could not determine current branch');
+        await window.showAlert('Error', 'Could not determine current branch');
         return;
     }
     
     if (!currentBranch) {
-        await showAlert('Error', 'Could not determine current branch');
+        await window.showAlert('Error', 'Could not determine current branch');
         return;
     }
     
-    const confirmed = await showConfirm(
+    const confirmed = await window.showConfirm(
         'Rebase Branch',
         `Rebase current branch "${currentBranch}" onto "${branchName}"?\n\nThis will rebase "${currentBranch}" onto "${branchName}".`
     );
@@ -601,35 +601,35 @@ async function rebaseBranch(branchName) {
         const result = await ipcRenderer.invoke('git:rebase-branch', currentBranch, branchName);
         
         if (result.error) {
-            await showAlert('Error', `Error rebasing branch: ${result.error}`);
+            await window.showAlert('Error', `Error rebasing branch: ${result.error}`);
         } else {
             await loadBranches();
             await loadCommitFiles();
             await loadGitLogs(currentBranch);
-            await showAlert('Success', `Branch "${currentBranch}" has been rebased onto "${branchName}"!`);
+            await window.showAlert('Success', `Branch "${currentBranch}" has been rebased onto "${branchName}"!`);
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 }
 
 async function deleteBranch(branchName) {
-    const confirmed = await showConfirm('Delete Branch', `Are you sure you want to delete branch "${branchName}"?\n\nThis action cannot be undone.`);
+    const confirmed = await window.showConfirm('Delete Branch', `Are you sure you want to delete branch "${branchName}"?\n\nThis action cannot be undone.`);
     if (!confirmed) {
         return;
     }
     
     // Check if branch has unmerged changes
-    const force = await showConfirm('Force Delete', 'Force delete? (Use this if the branch has unmerged changes)');
+    const force = await window.showConfirm('Force Delete', 'Force delete? (Use this if the branch has unmerged changes)');
     
     const result = await ipcRenderer.invoke('git:delete-branch', branchName, force);
     
     if (result.error) {
-        await showAlert('Error', `Error deleting branch: ${result.error}`);
+        await window.showAlert('Error', `Error deleting branch: ${result.error}`);
     } else {
         await loadBranches();
         await loadCommitFiles();
-        await showAlert('Success', `Branch "${branchName}" deleted successfully!`);
+        await window.showAlert('Success', `Branch "${branchName}" deleted successfully!`);
     }
 }
 
@@ -753,7 +753,7 @@ function attachFileActionListeners() {
             const result = await ipcRenderer.invoke('git:stage-file', filePath);
             
             if (result.error) {
-                await showAlert('Error', `Error: ${result.error}`);
+                await window.showAlert('Error', `Error: ${result.error}`);
             } else {
                 await loadCommitFiles(); // Refresh commit tab file lists
             }
@@ -766,7 +766,7 @@ function attachFileActionListeners() {
             const result = await ipcRenderer.invoke('git:unstage-file', filePath);
             
             if (result.error) {
-                await showAlert('Error', `Error: ${result.error}`);
+                await window.showAlert('Error', `Error: ${result.error}`);
             } else {
                 await loadCommitFiles(); // Refresh commit tab file lists
             }
@@ -941,7 +941,7 @@ async function loadCommitFiles() {
                             const result = await ipcRenderer.invoke('git:unstage-file', filePath);
 
                             if (result.error) {
-                                await showAlert('Error', `Error: ${result.error}`);
+                                await window.showAlert('Error', `Error: ${result.error}`);
                                 button.disabled = false;
                                 button.textContent = 'Unstage';
                             } else {
@@ -955,7 +955,7 @@ async function loadCommitFiles() {
                                 }
                             }
                         } catch (error) {
-                            await showAlert('Error', `Error: ${error.message}`);
+                            await window.showAlert('Error', `Error: ${error.message}`);
                             button.disabled = false;
                             button.textContent = 'Unstage';
                         }
@@ -1005,7 +1005,7 @@ async function loadCommitFiles() {
                         const filePath = e.target.dataset.file;
                         const button = e.target;
                         
-                        const confirmed = await showConfirm(
+                        const confirmed = await window.showConfirm(
                             'Roll Back File',
                             `Roll back changes to "${filePath}"?\n\nThis will discard all uncommitted changes to this file.`
                         );
@@ -1021,7 +1021,7 @@ async function loadCommitFiles() {
                             const result = await ipcRenderer.invoke('git:rollback-file', filePath);
                             
                             if (result.error) {
-                                await showAlert('Error', `Error: ${result.error}`);
+                                await window.showAlert('Error', `Error: ${result.error}`);
                                 addGitMessage('Rollback Error', result.message || result.error, 'error');
                                 button.disabled = false;
                                 button.textContent = 'Roll Back';
@@ -1037,7 +1037,7 @@ async function loadCommitFiles() {
                                 }
                             }
                         } catch (error) {
-                            await showAlert('Error', `Error: ${error.message}`);
+                            await window.showAlert('Error', `Error: ${error.message}`);
                             addGitMessage('Rollback Error', error.message, 'error');
                             button.disabled = false;
                             button.textContent = 'Roll Back';
@@ -1059,7 +1059,7 @@ async function loadCommitFiles() {
                             const result = await ipcRenderer.invoke('git:stage-file', filePath);
                             
                             if (result.error) {
-                                await showAlert('Error', `Error: ${result.error}`);
+                                await window.showAlert('Error', `Error: ${result.error}`);
                                 button.disabled = false;
                                 button.textContent = 'Stage';
                             } else {
@@ -1073,7 +1073,7 @@ async function loadCommitFiles() {
                                 }
                             }
                         } catch (error) {
-                            await showAlert('Error', `Error: ${error.message}`);
+                            await window.showAlert('Error', `Error: ${error.message}`);
                             button.disabled = false;
                             button.textContent = 'Stage';
                         }
@@ -1212,7 +1212,7 @@ async function forcePush() {
     }
     
     // Show warning confirmation
-    const confirmed = await showConfirm(
+    const confirmed = await window.showConfirm(
         'Force Push Warning',
         'Force push will overwrite the remote branch history. This is a destructive operation that cannot be undone.\n\nAre you sure you want to force push?'
     );
@@ -1282,7 +1282,7 @@ async function handleCreateBranch() {
     
     // Basic validation
     if (!/^[a-zA-Z0-9._/-]+$/.test(trimmedName)) {
-        await showAlert('Invalid Branch Name', 'Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
+        await window.showAlert('Invalid Branch Name', 'Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
         return;
     }
     
@@ -1290,15 +1290,15 @@ async function handleCreateBranch() {
         const result = await ipcRenderer.invoke('git:create-branch', trimmedName);
         
         if (result.error) {
-            await showAlert('Error', `Error creating branch: ${result.error}`);
+            await window.showAlert('Error', `Error creating branch: ${result.error}`);
         } else {
             // Refresh branches and checkout the new branch
             await loadBranches();
             await loadCommitFiles();
-            await showAlert('Success', `Branch "${trimmedName}" created and checked out successfully!`);
+            await window.showAlert('Success', `Branch "${trimmedName}" created and checked out successfully!`);
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 }
 
@@ -1339,19 +1339,19 @@ document.getElementById('settings-save-repo').addEventListener('click', async ()
         const saveResult = await ipcRenderer.invoke('config:set-git-repo-path', finalPath);
         
         if (!saveResult || !saveResult.success) {
-            await showAlert('Error', 'Failed to save repository path to config file!');
+            await window.showAlert('Error', 'Failed to save repository path to config file!');
             return;
         }
         
         // Verify immediately
         const verify = await ipcRenderer.invoke('config:get-git-repo-path');
         if (verify.path !== finalPath) {
-            await showAlert('Error', 'Saved but verification failed! Expected: ' + finalPath + ' Got: ' + verify.path);
+            await window.showAlert('Error', 'Saved but verification failed! Expected: ' + finalPath + ' Got: ' + verify.path);
             return;
         }
         
     } catch (error) {
-        await showAlert('Error', 'Error saving repository path: ' + error.message);
+        await window.showAlert('Error', 'Error saving repository path: ' + error.message);
         return;
     }
     
@@ -1381,7 +1381,7 @@ document.getElementById('settings-save-template').addEventListener('click', asyn
         const saveResult = await ipcRenderer.invoke('config:set-commit-template', template);
         
         if (!saveResult || !saveResult.success) {
-            await showAlert('Error', 'Failed to save commit template!');
+            await window.showAlert('Error', 'Failed to save commit template!');
             return;
         }
         
@@ -1402,7 +1402,7 @@ document.getElementById('settings-save-template').addEventListener('click', asyn
             }
         }, 2000);
     } catch (error) {
-        await showAlert('Error', 'Error saving commit template: ' + error.message);
+        await window.showAlert('Error', 'Error saving commit template: ' + error.message);
     }
 });
 
@@ -1411,7 +1411,7 @@ document.getElementById('settings-select-diagram-directory').addEventListener('c
     try {
         const result = await ipcRenderer.invoke('diagram:select-directory');
         if (result.error) {
-            await showAlert('Error', `Error selecting directory: ${result.error}`);
+            await window.showAlert('Error', `Error selecting directory: ${result.error}`);
         } else if (result.directory) {
             const diagramDirectoryInput = document.getElementById('settings-diagram-directory');
             if (diagramDirectoryInput) {
@@ -1419,7 +1419,7 @@ document.getElementById('settings-select-diagram-directory').addEventListener('c
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1451,7 +1451,7 @@ document.getElementById('settings-save-diagram-directory').addEventListener('cli
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1476,7 +1476,7 @@ document.getElementById('settings-save-main-branch').addEventListener('click', a
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1517,7 +1517,7 @@ document.getElementById('settings-save-tab-size').addEventListener('click', asyn
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1537,7 +1537,7 @@ document.getElementById('mcp-start-btn').addEventListener('click', async () => {
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1556,7 +1556,7 @@ document.getElementById('mcp-stop-btn').addEventListener('click', async () => {
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1569,7 +1569,7 @@ document.getElementById('settings-select-notes-directory').addEventListener('cli
     try {
         const result = await ipcRenderer.invoke('notes:select-directory');
         if (result.error) {
-            await showAlert('Error', `Error selecting directory: ${result.error}`);
+            await window.showAlert('Error', `Error selecting directory: ${result.error}`);
         } else if (result.directory) {
             const notesDirectoryInput = document.getElementById('settings-notes-directory');
             if (notesDirectoryInput) {
@@ -1577,7 +1577,7 @@ document.getElementById('settings-select-notes-directory').addEventListener('cli
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1610,7 +1610,7 @@ document.getElementById('settings-save-notes-directory').addEventListener('click
             }
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 });
 
@@ -1732,12 +1732,12 @@ async function createBranchFromModal() {
     
     const branchName = input.value.trim();
     if (!branchName) {
-        await showAlert('Input Required', 'Please enter a branch name.');
+        await window.showAlert('Input Required', 'Please enter a branch name.');
         return;
     }
     
     if (!/^[a-zA-Z0-9._/-]+$/.test(branchName)) {
-        await showAlert('Invalid Branch Name', 'Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
+        await window.showAlert('Invalid Branch Name', 'Branch names can only contain letters, numbers, dots, underscores, slashes, and hyphens.');
         return;
     }
     
@@ -1746,14 +1746,14 @@ async function createBranchFromModal() {
     try {
         const result = await ipcRenderer.invoke('git:create-branch', branchName);
         if (result.error) {
-            await showAlert('Error', `Error creating branch: ${result.error}`);
+            await window.showAlert('Error', `Error creating branch: ${result.error}`);
         } else {
             await loadBranches();
             await loadCommitFiles();
-            await showAlert('Success', `Branch "${branchName}" created and checked out successfully!`);
+            await window.showAlert('Success', `Branch "${branchName}" created and checked out successfully!`);
         }
     } catch (error) {
-        await showAlert('Error', `Error: ${error.message}`);
+        await window.showAlert('Error', `Error: ${error.message}`);
     }
 }
 
@@ -2530,7 +2530,7 @@ if (fetchBranchesBtn) {
             const result = await ipcRenderer.invoke('git:fetch');
             
             if (result.error) {
-                await showAlert('Error', `Error fetching: ${result.error}`);
+                await window.showAlert('Error', `Error fetching: ${result.error}`);
                 addGitMessage('Fetch Error', result.message || result.error, 'error');
             } else {
                 // After successful fetch, refresh branches to show updated remote branches
@@ -2538,7 +2538,7 @@ if (fetchBranchesBtn) {
                 addGitMessage('Fetch Success', result.message || 'Fetched latest changes from remote', 'success');
             }
         } catch (error) {
-            await showAlert('Error', `Error: ${error.message}`);
+            await window.showAlert('Error', `Error: ${error.message}`);
         } finally {
             button.textContent = originalText;
             button.disabled = false;

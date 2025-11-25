@@ -1,5 +1,5 @@
 const { ipcRenderer } = require('electron');
-const { showAlert = window.showAlert, showConfirm = window.showConfirm, escapeHtml = window.escapeHtml } = window;
+const { escapeHtml } = require('../renderer/core/utils');
 
 function createDatabaseView() {
     // Database viewer state
@@ -298,13 +298,13 @@ function createDatabaseView() {
         if (executeBtn) {
             executeBtn.addEventListener('click', async () => {
                 if (!isDatabaseConnected) {
-                    await showAlert('Not Connected', 'Please connect to a database first.');
+                    await window.showAlert('Not Connected', 'Please connect to a database first.');
                     return;
                 }
 
                 const query = queryEditor.value.trim();
                 if (!query) {
-                    await showAlert('Empty Query', 'Please enter a SQL query.');
+                    await window.showAlert('Empty Query', 'Please enter a SQL query.');
                     return;
                 }
 
@@ -527,12 +527,12 @@ function createDatabaseView() {
         if (settingsDbDeleteButton) {
             settingsDbDeleteButton.addEventListener('click', async () => {
                 if (!selectedSettingsDbConnectionId) {
-                    await showAlert('No Connection Selected', 'Select a saved connection to delete.');
+                    await window.showAlert('No Connection Selected', 'Select a saved connection to delete.');
                     return;
                 }
 
                 const connection = getDbConnectionById(selectedSettingsDbConnectionId);
-                const confirmed = await showConfirm('Delete Connection', `Delete "${connection?.name || 'connection'}"?`);
+                const confirmed = await window.showConfirm('Delete Connection', `Delete "${connection?.name || 'connection'}"?`);
                 if (!confirmed) return;
 
                 const status = document.getElementById('settings-db-status');
