@@ -318,12 +318,12 @@ header h1 {
     flex: 1;
     padding: 15px;
     overflow-y: auto;
+    overflow-x: auto;
     background: #1a1a1a;
     font-family: 'Courier New', monospace;
     font-size: 13px;
     line-height: 1.6;
-    white-space: pre-wrap;
-    word-wrap: break-word;
+    white-space: pre;
 }
 
 .log-output .placeholder {

@@ -142,13 +142,30 @@ ipcMain.handle('docker:get-logs', async (event, containerId, tail = 100) => {
 
   try {
     const container = docker.getContainer(containerId);
-    const logs = await container.logs({
+    
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout fetching logs')), 10000);
+    });
+    
+    const logsPromise = container.logs({
       stdout: true,
       stderr: true,
       tail: tail,
-      timestamps: true
+      timestamps: true,
+      follow: false
     });
-    return { logs: logs.toString('utf-8') };
+    
+    const logs = await Promise.race([logsPromise, timeoutPromise]);
+    
+    // Handle both Buffer and Stream responses
+    if (Buffer.isBuffer(logs)) {
+      return { logs: logs.toString('utf-8') };
+    } else if (typeof logs === 'string') {
+      return { logs: logs };
+    } else {
+      return { logs: '' };
+    }
   } catch (error) {
     return { error: error.message };
   }
