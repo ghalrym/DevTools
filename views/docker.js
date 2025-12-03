@@ -409,6 +409,9 @@ async function selectContainer(containerId, containerName, containerStatus) {
     lastLogContent = '';
     isInitialLoad = true;
     
+    // Invalidate exclusion cache to ensure fresh patterns are loaded
+    invalidateExclusionCache();
+    
     // Update UI
     document.querySelectorAll('.container-item').forEach(item => {
         item.classList.remove('selected');
@@ -489,20 +492,38 @@ async function getExclusionPatterns() {
         }).filter(regex => regex !== null);
         
         exclusionPatternsCacheTime = now;
+        
+        // Debug logging
+        if (compiledExclusionPatterns.length > 0) {
+            console.log(`Loaded ${compiledExclusionPatterns.length} exclusion pattern(s) for Docker logs`);
+        }
+        
         return compiledExclusionPatterns;
     } catch (error) {
         console.error('Error loading exclusion patterns:', error);
+        compiledExclusionPatterns = [];
         return [];
     }
 }
 
-function shouldExcludeLine(line) {
+function shouldExcludeLine(rawLine, cleanedLine) {
     if (!compiledExclusionPatterns || compiledExclusionPatterns.length === 0) {
         return false;
     }
     
-    // Check if line matches any exclusion pattern
-    return compiledExclusionPatterns.some(regex => regex.test(line));
+    // Check if either raw line or cleaned line matches any exclusion pattern
+    // This allows matching against both the original log format and the cleaned version
+    const shouldExclude = compiledExclusionPatterns.some(regex => {
+        const rawMatch = regex.test(rawLine);
+        const cleanedMatch = regex.test(cleanedLine);
+        if (rawMatch || cleanedMatch) {
+            // Debug: log when a line is excluded
+            console.debug(`Excluding line (raw match: ${rawMatch}, cleaned match: ${cleanedMatch}):`, cleanedLine.substring(0, 100));
+        }
+        return rawMatch || cleanedMatch;
+    });
+    
+    return shouldExclude;
 }
 
 function cleanLogLine(line) {
@@ -620,8 +641,15 @@ async function loadContainerLogs(forceReload = false) {
     // Parse new logs (filter out empty lines after cleaning and excluded lines)
     const rawLines = result.logs.split('\n');
     const newLines = rawLines
-        .map(line => cleanLogLine(line))
-        .filter(line => line.trim() !== '' && !shouldExcludeLine(line));
+        .map(rawLine => {
+            const cleaned = cleanLogLine(rawLine);
+            return { raw: rawLine, cleaned: cleaned };
+        })
+        .filter(({ raw, cleaned }) => {
+            // Filter out empty lines and excluded lines
+            return cleaned.trim() !== '' && !shouldExcludeLine(raw, cleaned);
+        })
+        .map(({ cleaned }) => cleaned); // Extract just the cleaned lines for display
     
     if (isInitialLoad || forceReload || displayedLineCount === 0) {
         // Initial load or force reload - replace all content
@@ -643,8 +671,14 @@ async function loadContainerLogs(forceReload = false) {
             // We cleared logs, so find where new content starts
             const beforeClearLines = lastLogContentBeforeClear
                 .split('\n')
-                .map(line => cleanLogLine(line))
-                .filter(line => line.trim() !== '' && !shouldExcludeLine(line));
+                .map(rawLine => {
+                    const cleaned = cleanLogLine(rawLine);
+                    return { raw: rawLine, cleaned: cleaned };
+                })
+                .filter(({ raw, cleaned }) => {
+                    return cleaned.trim() !== '' && !shouldExcludeLine(raw, cleaned);
+                })
+                .map(({ cleaned }) => cleaned);
             
             if (beforeClearLines.length > 0) {
                 // Find the last line we had before clearing in the new content
