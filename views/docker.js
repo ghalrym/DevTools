@@ -508,14 +508,11 @@ async function getExclusionPatterns() {
 
 function shouldExcludeLine(line) {
     if (!compiledExclusionPatterns || compiledExclusionPatterns.length === 0) {
-        console.log(`[EXCLUSION] Line (no patterns): "${line.substring(0, 100)}" - matched: false`);
         return false;
     }
     
     // Check if the line matches any exclusion pattern (check cleaned line after cleaning)
-    const matched = compiledExclusionPatterns.some(regex => regex.test(line));
-    console.log(`[EXCLUSION] Line: "${line.substring(0, 100)}" - matched: ${matched}`);
-    return matched;
+    return compiledExclusionPatterns.some(regex => regex.test(line));
 }
 
 function cleanLogLine(line) {
