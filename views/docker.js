@@ -511,20 +511,65 @@ function shouldExcludeLine(line) {
         return false;
     }
     
-    // Check if the line matches any exclusion pattern
+    // Check if the line matches any exclusion pattern (check cleaned line after cleaning)
     return compiledExclusionPatterns.some(regex => regex.test(line));
 }
 
-function formatLogLine(line) {
-    const text = typeof line === 'string' ? line : '';
-    if (text.trim() === '') return '';
+function cleanLogLine(line) {
+    if (line.trim() === '') return '';
     
-    if (text.includes('ERROR') || text.includes('error')) {
-        return `<span style="color: #ff7f7f">${escapeHtml(text)}</span>`;
-    } else if (text.includes('WARN') || text.includes('warn')) {
-        return `<span style="color: #ffff7f">${escapeHtml(text)}</span>`;
+    let cleaned = line;
+    
+    // Remove ANSI escape codes (color codes, formatting, etc.)
+    // Matches patterns like [32m, [0m, [1m, [36m, [31m, [33m, etc.
+    cleaned = cleaned.replace(/\x1b\[[0-9;]*m/g, '');
+    cleaned = cleaned.replace(/\033\[[0-9;]*m/g, '');
+    cleaned = cleaned.replace(/\[[0-9;]*m/g, '');
+    
+    // Remove the full Docker log prefix pattern in one go:
+    // Control char + timestamp + IP + HTTP log format
+    // Pattern:2025-11-13T20:55:49.326542660Z 172.18.0.1 - - [13/Nov/2025:20:55:49 +0000] "
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+-\s+-\s+\[\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s+\+\d{4}\]\s+"?\s*/, '');
+    
+    // Also handle cases where some parts might be missing (fallback patterns)
+    // Remove standalone timestamp at start
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s*/, '');
+    
+    // Remove IP address patterns at the start (e.g., "172.18.0.1 - -")
+    cleaned = cleaned.replace(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+-\s+-\s+/, '');
+    
+    // Remove HTTP log format: [DD/Mon/YYYY:HH:mm:ss +0000] "
+    cleaned = cleaned.replace(/^\[\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s+\+\d{4}\]\s+"?\s*/, '');
+    
+    // Remove log level prefixes like "INFO: " or "ERROR: "
+    cleaned = cleaned.replace(/^(INFO|ERROR|WARN|DEBUG|TRACE):\s*/, '');
+    
+    // Remove IP:port patterns at the start (e.g., "172.18.0.5:59410 - ")
+    cleaned = cleaned.replace(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+\s+-\s+/, '');
+    
+    // Remove any remaining control characters at the start
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]+/, '');
+    
+    // Remove non-ASCII characters (keep only ASCII 32-126: printable characters)
+    cleaned = cleaned.replace(/[^\x20-\x7E]/g, '');
+    
+    // Remove any remaining leading whitespace
+    cleaned = cleaned.trimStart();
+    
+    return cleaned;
+}
+
+function formatLogLine(line) {
+    // Clean the line for display
+    const cleaned = cleanLogLine(line);
+    if (cleaned === '') return '';
+    
+    if (cleaned.includes('ERROR') || cleaned.includes('error')) {
+        return `<span style="color: #ff7f7f">${escapeHtml(cleaned)}</span>`;
+    } else if (cleaned.includes('WARN') || cleaned.includes('warn')) {
+        return `<span style="color: #ffff7f">${escapeHtml(cleaned)}</span>`;
     } else {
-        return escapeHtml(text);
+        return escapeHtml(cleaned);
     }
 }
 
@@ -583,11 +628,16 @@ async function loadContainerLogs(forceReload = false) {
     // Get exclusion patterns
     await getExclusionPatterns();
     
-    // Parse new logs (filter out empty lines and excluded lines)
+    // Parse new logs (clean first, then filter out excluded lines)
     const rawLines = result.logs.split('\n');
     const newLines = rawLines
         .map(line => line.replace(/\r$/, ''))
-        .filter(line => line.trim() !== '' && !shouldExcludeLine(line));
+        .map(line => cleanLogLine(line)) // Clean first
+        .filter(line => {
+            // Filter: exclude empty lines and lines matching exclusion patterns
+            // Check exclusion on cleaned line AFTER cleaning
+            return line.trim() !== '' && !shouldExcludeLine(line);
+        });
     
     if (isInitialLoad || forceReload || displayedLineCount === 0) {
         // Initial load or force reload - replace all content
@@ -610,7 +660,12 @@ async function loadContainerLogs(forceReload = false) {
             const beforeClearLines = lastLogContentBeforeClear
                 .split('\n')
                 .map(line => line.replace(/\r$/, ''))
-                .filter(line => line.trim() !== '' && !shouldExcludeLine(line));
+                .map(line => cleanLogLine(line)) // Clean first
+                .filter(line => {
+                    // Filter: exclude empty lines and lines matching exclusion patterns
+                    // Check exclusion on cleaned line AFTER cleaning
+                    return line.trim() !== '' && !shouldExcludeLine(line);
+                });
             
             if (beforeClearLines.length > 0) {
                 // Find the last line we had before clearing in the new content
