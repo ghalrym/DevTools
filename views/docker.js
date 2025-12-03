@@ -455,6 +455,56 @@ async function refreshContainerStatus() {
     }
 }
 
+// Cache for compiled regex patterns
+let compiledExclusionPatterns = null;
+let exclusionPatternsCacheTime = 0;
+const CACHE_DURATION = 5000; // Cache for 5 seconds
+
+// Function to invalidate cache (call when settings change)
+function invalidateExclusionCache() {
+    compiledExclusionPatterns = null;
+    exclusionPatternsCacheTime = 0;
+}
+
+async function getExclusionPatterns() {
+    const now = Date.now();
+    // Return cached patterns if still valid
+    if (compiledExclusionPatterns && (now - exclusionPatternsCacheTime) < CACHE_DURATION) {
+        return compiledExclusionPatterns;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('config:get-docker-regex-exclusions');
+        const exclusions = result.exclusions || [];
+        
+        // Compile regex patterns
+        compiledExclusionPatterns = exclusions.map(pattern => {
+            try {
+                return new RegExp(pattern);
+            } catch (e) {
+                // Invalid regex, skip it
+                console.warn(`Invalid regex pattern: ${pattern}`, e);
+                return null;
+            }
+        }).filter(regex => regex !== null);
+        
+        exclusionPatternsCacheTime = now;
+        return compiledExclusionPatterns;
+    } catch (error) {
+        console.error('Error loading exclusion patterns:', error);
+        return [];
+    }
+}
+
+function shouldExcludeLine(line) {
+    if (!compiledExclusionPatterns || compiledExclusionPatterns.length === 0) {
+        return false;
+    }
+    
+    // Check if line matches any exclusion pattern
+    return compiledExclusionPatterns.some(regex => regex.test(line));
+}
+
 function cleanLogLine(line) {
     if (line.trim() === '') return '';
     
@@ -564,9 +614,14 @@ async function loadContainerLogs(forceReload = false) {
         return;
     }
     
-    // Parse new logs (filter out empty lines after cleaning)
+    // Get exclusion patterns
+    await getExclusionPatterns();
+    
+    // Parse new logs (filter out empty lines after cleaning and excluded lines)
     const rawLines = result.logs.split('\n');
-    const newLines = rawLines.map(line => cleanLogLine(line)).filter(line => line.trim() !== '');
+    const newLines = rawLines
+        .map(line => cleanLogLine(line))
+        .filter(line => line.trim() !== '' && !shouldExcludeLine(line));
     
     if (isInitialLoad || forceReload || displayedLineCount === 0) {
         // Initial load or force reload - replace all content
@@ -582,8 +637,14 @@ async function loadContainerLogs(forceReload = false) {
         
         // If logs were cleared, only show content that's NEWER than what we had before clearing
         if (lastLogContentBeforeClear && displayedLineCount === 0) {
+            // Get exclusion patterns
+            await getExclusionPatterns();
+            
             // We cleared logs, so find where new content starts
-            const beforeClearLines = lastLogContentBeforeClear.split('\n').map(line => cleanLogLine(line)).filter(line => line.trim() !== '');
+            const beforeClearLines = lastLogContentBeforeClear
+                .split('\n')
+                .map(line => cleanLogLine(line))
+                .filter(line => line.trim() !== '' && !shouldExcludeLine(line));
             
             if (beforeClearLines.length > 0) {
                 // Find the last line we had before clearing in the new content
@@ -810,6 +871,8 @@ document.getElementById('clear-logs').addEventListener('click', () => {
         startFollowingLogs,
         stopFollowingLogs,
         hasSelection: () => Boolean(selectedContainerId),
+        loadContainerLogs,
+        invalidateExclusionCache,
     };
 }
 

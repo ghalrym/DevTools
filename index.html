@@ -439,6 +439,19 @@
                 </div>
                 
                 <div class="settings-section" style="margin-top: 30px;">
+                    <h3>Docker Log Exclusions</h3>
+                    <div class="settings-item">
+                        <label>Regex Patterns to Exclude:</label>
+                        <p class="settings-hint">Enter regex patterns (one per line) to exclude matching log lines from the Docker view. Lines matching any pattern will be filtered out.</p>
+                        <textarea id="settings-docker-regex-exclusions" class="settings-textarea" placeholder="Example patterns:&#10;^GET /health&#10;^POST /metrics&#10;DEBUG:.*" rows="6"></textarea>
+                        <div id="settings-docker-regex-status" class="settings-status"></div>
+                    </div>
+                    <div class="settings-footer">
+                        <button id="settings-save-docker-regex" class="btn btn-primary">Save Exclusions</button>
+                    </div>
+                </div>
+                
+                <div class="settings-section" style="margin-top: 30px;">
                     <h3>MCP Server</h3>
                     <div class="settings-item">
                         <label>MCP Server Status:</label>

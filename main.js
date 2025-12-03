@@ -1369,6 +1369,27 @@ ipcMain.handle('config:set-active-db-connection', async (event, connectionId) =>
   return { success: true, activeId: connectionId };
 });
 
+ipcMain.handle('config:get-docker-regex-exclusions', async () => {
+  const config = loadConfig();
+  const exclusions = Array.isArray(config.dockerRegexExclusions) ? config.dockerRegexExclusions : [];
+  return { exclusions };
+});
+
+ipcMain.handle('config:set-docker-regex-exclusions', async (event, exclusions) => {
+  try {
+    const config = loadConfig();
+    // Ensure it's an array of strings
+    const sanitizedExclusions = Array.isArray(exclusions) 
+      ? exclusions.filter(e => typeof e === 'string' && e.trim() !== '')
+      : [];
+    config.dockerRegexExclusions = sanitizedExclusions;
+    const success = saveConfig(config);
+    return { success, exclusions: sanitizedExclusions };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 
 // IPC Handlers for MCP Server
 ipcMain.handle('mcp:start', async () => {

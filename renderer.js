@@ -127,3 +127,131 @@ document.getElementById('start-container').disabled = true;
 document.getElementById('stop-container').disabled = true;
 document.getElementById('restart-container').disabled = true;
 
+// Load settings function
+async function loadSettings() {
+    try {
+        // Load git repo path
+        const repoResult = await ipcRenderer.invoke('config:get-git-repo-path');
+        const repoInput = document.getElementById('settings-repo-path');
+        if (repoInput && repoResult.path) {
+            repoInput.value = repoResult.path;
+        }
+        
+        // Load commit template
+        const templateResult = await ipcRenderer.invoke('config:get-commit-template');
+        const templateInput = document.getElementById('settings-commit-template');
+        if (templateInput && templateResult.template) {
+            templateInput.value = templateResult.template;
+        }
+        
+        // Load main branch
+        const branchResult = await ipcRenderer.invoke('config:get-main-branch');
+        const branchInput = document.getElementById('settings-main-branch');
+        if (branchInput && branchResult.branch) {
+            branchInput.value = branchResult.branch;
+        }
+        
+        // Load tab size
+        const tabSizeResult = await ipcRenderer.invoke('config:get-tab-size');
+        const tabSizeInput = document.getElementById('settings-tab-size');
+        if (tabSizeInput) {
+            tabSizeInput.value = tabSizeResult.tabSize || 4;
+        }
+        
+        // Load diagram directory
+        const diagramResult = await ipcRenderer.invoke('diagram:get-directory');
+        const diagramInput = document.getElementById('settings-diagram-directory');
+        if (diagramInput && diagramResult.directory) {
+            diagramInput.value = diagramResult.directory;
+        }
+        
+        // Load notes directory
+        const notesResult = await ipcRenderer.invoke('notes:get-directory');
+        const notesInput = document.getElementById('settings-notes-directory');
+        if (notesInput && notesResult.directory) {
+            notesInput.value = notesResult.directory;
+        }
+        
+        // Load docker regex exclusions
+        const dockerRegexResult = await ipcRenderer.invoke('config:get-docker-regex-exclusions');
+        const dockerRegexInput = document.getElementById('settings-docker-regex-exclusions');
+        if (dockerRegexInput && dockerRegexResult.exclusions) {
+            dockerRegexInput.value = dockerRegexResult.exclusions.join('\n');
+        }
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+// Make loadSettings available globally
+window.loadSettings = loadSettings;
+
+// Save docker regex exclusions
+document.getElementById('settings-save-docker-regex').addEventListener('click', async () => {
+    const textarea = document.getElementById('settings-docker-regex-exclusions');
+    const value = textarea.value.trim();
+    
+    // Split by newlines and filter out empty lines
+    const exclusions = value.split('\n')
+        .map(line => line.trim())
+        .filter(line => line !== '');
+    
+    // Validate regex patterns
+    const invalidPatterns = [];
+    for (const pattern of exclusions) {
+        try {
+            new RegExp(pattern);
+        } catch (e) {
+            invalidPatterns.push(pattern);
+        }
+    }
+    
+    if (invalidPatterns.length > 0) {
+        const statusDiv = document.getElementById('settings-docker-regex-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = `<div class="error">❌ Invalid regex patterns: ${invalidPatterns.join(', ')}</div>`;
+        }
+        return;
+    }
+    
+    try {
+        const result = await ipcRenderer.invoke('config:set-docker-regex-exclusions', exclusions);
+        const statusDiv = document.getElementById('settings-docker-regex-status');
+        const button = document.getElementById('settings-save-docker-regex');
+        
+        if (result.success) {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="success">✓ Regex exclusions saved successfully</div>';
+            }
+            const originalText = button.textContent;
+            button.textContent = '✓ Saved!';
+            button.style.background = '#2d5a2d';
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = '';
+                if (statusDiv) {
+                    statusDiv.innerHTML = '';
+                }
+            }, 2000);
+            
+            // Reload logs if a container is selected
+            if (window.dockerView && window.dockerView.hasSelection()) {
+                // Invalidate cache and reload logs to apply the new filters
+                if (window.dockerView.invalidateExclusionCache) {
+                    window.dockerView.invalidateExclusionCache();
+                }
+                const loadContainerLogs = window.dockerView.loadContainerLogs;
+                if (loadContainerLogs) {
+                    await loadContainerLogs(true);
+                }
+            }
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = `<div class="error">❌ Error: ${result.error || 'Failed to save exclusions'}</div>`;
+            }
+        }
+    } catch (error) {
+        await window.showAlert('Error', `Error saving regex exclusions: ${error.message}`);
+    }
+});
+
