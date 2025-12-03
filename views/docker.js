@@ -531,9 +531,17 @@ function cleanLogLine(line) {
     // Pattern:2025-11-13T20:55:49.326542660Z 172.18.0.1 - - [13/Nov/2025:20:55:49 +0000] "
     cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+-\s+-\s+\[\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s+\+\d{4}\]\s+"?\s*/, '');
     
-    // Also handle cases where some parts might be missing (fallback patterns)
-    // Remove standalone timestamp at start
-    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s*/, '');
+    // Remove Docker timestamps - multiple patterns to catch all variations
+    // ISO 8601 with microseconds: 2025-01-01T12:00:00.123456789Z
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+/, '');
+    // ISO 8601 without microseconds: 2025-01-01T12:00:00Z
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\s+/, '');
+    // ISO 8601 with timezone offset: 2025-01-01T12:00:00+00:00
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}\s+/, '');
+    // ISO 8601 with milliseconds: 2025-01-01T12:00:00.123Z
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{1,3}Z\s+/, '');
+    // Any remaining ISO timestamp pattern
+    cleaned = cleaned.replace(/^[\x00-\x1F\x7F-\x9F]*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[.\d]*[Z+-]\s*/, '');
     
     // Remove IP address patterns at the start (e.g., "172.18.0.1 - -")
     cleaned = cleaned.replace(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+-\s+-\s+/, '');
