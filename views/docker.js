@@ -647,7 +647,63 @@ async function loadContainerLogs(forceReload = false) {
             return line.trim() !== '' && !shouldExcludeLine(line);
         });
     
-    if (isInitialLoad || forceReload || displayedLineCount === 0) {
+    // Check if logs were cleared first - this takes priority over initial load
+    if (lastLogContentBeforeClear && displayedLineCount === 0) {
+        // Get exclusion patterns
+        await getExclusionPatterns();
+        
+        // We cleared logs, so find where new content starts
+        const beforeClearLines = lastLogContentBeforeClear
+            .split('\n')
+            .map(line => line.replace(/\r$/, ''))
+            .map(line => cleanLogLine(line)) // Clean first
+            .filter(line => {
+                // Filter: exclude empty lines and lines matching exclusion patterns
+                // Check exclusion on cleaned line AFTER cleaning
+                return line.trim() !== '' && !shouldExcludeLine(line);
+            });
+        
+        if (beforeClearLines.length > 0) {
+            // Find the last line we had before clearing in the new content
+            const lastLineBeforeClear = beforeClearLines[beforeClearLines.length - 1];
+            let startIndex = 0;
+            
+            for (let i = 0; i < newLines.length; i++) {
+                if (newLines[i] === lastLineBeforeClear) {
+                    startIndex = i + 1;
+                    break;
+                }
+            }
+            
+            // Only show lines after the clear point
+            if (startIndex < newLines.length) {
+                const newContentLines = newLines.slice(startIndex);
+                const newContent = newContentLines.map(formatLogLine).join('\n');
+                
+                if (newContent) {
+                    // Replace the "waiting for new logs" message with actual new content
+                    renderLogContent(newContent, { scrollToBottom: wasAtBottom });
+                    displayedLineCount = newContentLines.length;
+                    previousLogLines = newContentLines;
+                    lastLogContentBeforeClear = ''; // Reset clear flag
+                } else {
+                    // No new content yet, keep showing the placeholder
+                    return;
+                }
+            } else {
+                // No new content yet, keep showing the placeholder
+                return;
+            }
+        } else {
+            // No previous lines to match against, show all new content
+            const formattedContent = newLines.map(formatLogLine).join('\n');
+            renderLogContent(formattedContent, { scrollToBottom: true });
+            displayedLineCount = newLines.length;
+            previousLogLines = newLines;
+            lastLogContent = result.logs;
+            lastLogContentBeforeClear = ''; // Reset clear flag
+        }
+    } else if (isInitialLoad || forceReload) {
         // Initial load or force reload - replace all content
         const formattedContent = newLines.map(formatLogLine).join('\n');
         renderLogContent(formattedContent, { scrollToBottom: true });
@@ -659,55 +715,7 @@ async function loadContainerLogs(forceReload = false) {
         // Incremental update - check for new content by comparing with previous
         const currentLogContent = result.logs;
         
-        // If logs were cleared, only show content that's NEWER than what we had before clearing
-        if (lastLogContentBeforeClear && displayedLineCount === 0) {
-            // Get exclusion patterns
-            await getExclusionPatterns();
-            
-            // We cleared logs, so find where new content starts
-            const beforeClearLines = lastLogContentBeforeClear
-                .split('\n')
-                .map(line => line.replace(/\r$/, ''))
-                .map(line => cleanLogLine(line)) // Clean first
-                .filter(line => {
-                    // Filter: exclude empty lines and lines matching exclusion patterns
-                    // Check exclusion on cleaned line AFTER cleaning
-                    return line.trim() !== '' && !shouldExcludeLine(line);
-                });
-            
-            if (beforeClearLines.length > 0) {
-                // Find the last line we had before clearing in the new content
-                const lastLineBeforeClear = beforeClearLines[beforeClearLines.length - 1];
-                let startIndex = 0;
-                
-                for (let i = 0; i < newLines.length; i++) {
-                    if (newLines[i] === lastLineBeforeClear) {
-                        startIndex = i + 1;
-                        break;
-                    }
-                }
-                
-                // Only show lines after the clear point
-                if (startIndex < newLines.length) {
-                    const newContentLines = newLines.slice(startIndex);
-                    const newContent = newContentLines.map(formatLogLine).join('\n');
-                    
-                    if (newContent) {
-                        // Replace the "waiting for new logs" message with actual new content
-                        renderLogContent(newContent, { scrollToBottom: wasAtBottom });
-                        displayedLineCount = newContentLines.length;
-                        previousLogLines = newContentLines;
-                        lastLogContentBeforeClear = ''; // Reset clear flag
-                    } else {
-                        // No new content yet, keep showing the placeholder
-                        return;
-                    }
-                } else {
-                    // No new content yet, keep showing the placeholder
-                    return;
-                }
-            }
-        } else if (currentLogContent !== lastLogContent) {
+        if (currentLogContent !== lastLogContent) {
             // Normal incremental update - find and append new lines
             let startIndex = 0;
             
@@ -889,9 +897,10 @@ document.getElementById('clear-logs').addEventListener('click', () => {
     lastLogContentBeforeClear = lastLogContent;
     
     // Reset display tracking but keep lastLogContent to compare against
+    // Don't set isInitialLoad = true, so we can detect new logs properly
     previousLogLines = [];
     displayedLineCount = 0;
-    isInitialLoad = true;
+    isInitialLoad = false;
 });
 
 
